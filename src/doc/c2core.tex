@@ -1,0 +1,1012 @@
+% Edit Mode: -*- LaTeX -*-
+% File: c2core.tex
+
+\providecommand{\docpart}{\input{separatehead}}
+
+\title{From \ansiC to \coreC}
+\author{Henning Makholm}
+\begin{docpart}
+\maketitle
+
+\newcommand{\ctoc}{\texttt{c2core}\xspace}
+\newcommand{\installleft}[2]{{#1}\curvearrowright{#2}}
+\newcommand{\atomconnect}[2]{{#1}\rightsquigarrow{#2}}
+
+\section{Transformation from C to Core C}
+This section describes the \ctoc phase of \cmix. This phase
+translates a type-checked \ansiC program into the \coreC
+representation defined in the previous section.
+
+\subsection{Types}
+\label{sec:c2coreTypes}
+The \ansiC program that is input to \ctoc has already been type
+checked and each relevant \ansiC contruct annotated with type
+information. However, this type information has to be translated
+to the \coreC representation, and the rules for structural
+sharing in the \coreC representation (section
+\vref{sec:corecTypeSharing})
+must be enforced.
+
+The types in the \ansiC program are represented as a classical
+object class hierarchy---\eg, ``a pointer type'' is a subclass
+of ``some type'', and so forth. Each type object knows how to
+translate itself into a fresh, fully owned, \coreC representation
+of itself. This translation is used when a declaration or expression must
+own its entire type, and is the source of most of the \coreC types.
+
+For some expressions with pointer type,
+the type sharing rules specify that the expression must own
+the ``outermost'' pointer and borrow the rest of the type from
+its subexpression. In these cases the pointer type is simply
+generated and the \ansiC type representation is not consulted
+at all.
+
+\subsubsection{Translation of recursive types}
+
+Locally, the type translation is a trivial recursive operation.
+However, types
+in C can be recursive, and we do not want to try to translate
+them into infinite \coreC representations. We need some sort
+of control over the recursion.
+
+Any type recursion that can be expressed in \ansiC involves
+a \syntax{struct} or \syntax{union} type, because
+those are the only types that can be expressed before their successors
+in the type graph have been specified\footnote
+        {An \syntax{enum} type can be named without having been fully
+        defined, too, but the translation of an \syntax{enum} type to
+        \coreC does not involve translating other types, so it cannot
+        be part of an infinite recursion.
+
+        Note that this fact depends on the representation of \syntax{enum}
+        types as primitive types in \coreC. Other imaginable
+        representations of C's type system might need to treat
+        recursion via \syntax{enum}s in pathological cases such as
+        \texttt{enum foo \{ bar = sizeof(enum foo*) \};}}.
+Therefore, we only check for type recursion while translating
+these types, known in most of the \cmix documentation as
+\emph{usertypes}.
+
+The rule is that if a translation of a usertype is needed directly or
+indirectly while tranlating the members of that usertype, the two
+instances of the usertype are made the same by forming a loop.
+Thus, given the definitions
+\begin{verbatim}
+  struct vertex ;
+  struct neighbours {
+     struct neighbours *next;
+     struct vertex *neighbour;
+  } ;
+  struct vertex {
+     struct neighbours *preds;
+     struct neighbours *succs;
+  } ;
+  struct Vertex *foo ;
+  struct Edgelist *bar ;
+\end{verbatim}
+the translation of \syntax{foo}'s type (shown on figure
+\vref{fig:c2coreVertexExample}) contains a single copy
+of \syntax{struct vertex} and two separate copies of
+\syntax{struct neighbours}. The translation of \syntax{bar}'s type,
+however, contains only a single copy of each \syntax{struct}.
+
+\begin{figure}[htbp]
+  \begin{frameit}
+  \begin{center}
+        This figure has not been drawn yet.
+  %  \leavevmode
+  %  \epsfig{file=struct1.eps,height=0.7\textheight,width=0.7\textwidth}
+  \end{center}
+  \end{frameit}
+  \caption{Type recursion example}
+  \label{fig:c2coreVertexExample}
+\end{figure}
+
+This strategy is implemented by each \ansiC usertype node\footnote
+        {The implementation of this is a little more complicated,
+        since there are actually two nodes involved in the \ansiC
+        representation: one representing the \emph{definition} of
+        the struct/union, and one representing the \emph{reference}
+        to the definition. The definition holds the member types,
+        so that is the place where the recursion prevention most
+        naturally takes place. However, the reference node holds the
+        type qualifiers that are to be put into the final type node,
+        and we don't want to identify two instances with different
+        qualifiers. Thus, it is the reference node that ``owns'' the
+        current translation pointer; and it passes it as a reference
+        parameter to the definition when translating itself.}
+having a
+pointer to a ``current'' \coreC translation, and translating it
+with the following algorithm:
+\begin{itemize}
+\item[1.] If there is a current \coreC translation, return that.
+\item[2.] Create a \cons{StructUnion} node with an empty member
+          type list. Install it as the current \coreC translation.
+\item[3.] Recursivly translate the types of the members into the
+          member type list of the newly created node.
+\item[4.] Set the current \coreC translation to ``none'', and
+          return the node created in step 2.
+\end{itemize}
+
+Observe that the recursion resolution strategy directly effects
+the precision of the binding-time analysis. Figure
+\vref{fig:c2coreLinkedListBTs} shows two possible \coreC
+representations of a linked list type. The one on the left
+is able to represent a list where every other element is dynamic
+and the rest are static. The \ctoc translation, however,
+produces the one on the right, forcing all elements to have
+the same binding time.
+
+\begin{figure}[htbp]
+  \begin{frameit}
+  \begin{center}
+        This figure has not been drawn yet.
+  %  \leavevmode
+  %  \epsfig{file=struct1.eps,height=0.7\textheight,width=0.7\textwidth}
+  \end{center}
+  \end{frameit}
+  \caption{The translation strategy for recursive types affects the BTA}
+  \label{fig:c2coreLinkedListBTs}
+\end{figure}
+
+The two depicted representations would be equally bad if the
+application happened to need every \emph{third} element to
+be dynamic. It is not at all trivial to select the best (finite)
+number of iterations to unfold in the translation\footnote
+        {It might be possible to implement an analysis that
+        made good decisions about this. However, it would
+        probably be complex and would \emph{need} to employ
+        pointer analysis data---and in \cmix the pointer analysis
+        comes \emph{after} the \ctoc translation},
+so we simply chose to use the strategy that is easiest to implement.
+
+\subsubsection{Typedef types}
+\syntax{typedef} type synonyms are expanded in the syntax analysis phase.
+
+\subsection{Global definitions and declarations}
+\label{sec:c2coreGlobally}
+It is tricky to find a safe overall strategy for the translation
+of global definitions and declarations. \syntax{struct},
+\syntax{union} and \syntax{enum} are easy:
+\begin{itemize}
+\item Apart from their role in the type translation (section
+      \ref{sec:c2coreTypes}), \syntax{struct} and \syntax{union}
+      definitions translate to \syntax{C\_UserDef}s that hold
+      the type tag and the member names. These ``master definitions''
+      must be present before we can translate any types. On the other
+      hand, there are no preconditions for building them.
+\item Likewise, \syntax{enum} definitions should be translated
+      to \syntax{C\_EnumDef}s before any type translation begins.
+      Because expression translation may involve type translation,
+      this means that explicit value expressions for the enumeration
+      constants cannot take place while building the
+      \syntax{C\_EnumDef}.
+\end{itemize}
+Consequenty, the very first step in the \ctoc translation is to
+traverse the \ansiC program\footnote
+        {In the \ansiC representation usertype definitions can
+        appear in the declaration part of compound statements
+        as well as globally. In \coreC they are all moved to
+        the global level.}
+and translate any \syntax{struct}, \syntax{union}, and \syntax{enum}
+definitions found there. The \ansiC definitions are annotated with
+references to the \coreC definitions to aid the type translation.
+Additionally, a list of original \syntax{enum} definitions is
+collected so that as the very \emph{last} step of \ctoc, the
+value expressions can be found and translated.
+
+Global variable and function definitions are more complicated. A function
+body usually contains many expressions, and variable definitions can contain
+expressions in initializers. The translation of expressions may
+contain \cons{Var} nodes that refer to---and must borrow the \coreC type
+of---other functions or global variables.
+
+This means that to fully translate a function or global variable, we
+may need to already have created \coreC declarations for any other
+global declaration, and to have translated their type.
+
+This fact suggest that we should translate the program in two passes:
+\begin{itemize}
+\item[I] Make a \coreC declaration for each global declaration, and
+        translate its type, but do not translate its function body,
+        repectively its initializer.
+\item[II] Make a second pass translating bodies and initializers.
+\end{itemize}
+
+Our problems are not totally solved by this, however, because even
+the \emph{types} of declarations may contain expressions that need
+translating, in the form of array size expressions. Among several
+possible strategies, all complicated, we choose this:
+
+\emph{When an array type is translated before pass I is finished, its
+size is \emph{not} translated straight away but put into a list of
+deferred array sizes.} The deferred array size expressions are then
+translated before pass II begins.
+
+It would be nice if the type translation could just keep deferring
+all array sizes, even while the loop that tries to empty the deferred
+list runs. Unfortunately it is possible to construct pathological
+examples such as
+\begin{verbatim}
+    struct S { int array[sizeof (struct S*)]; } s ;
+\end{verbatim}
+where the deferred list would never shrink to size 0. When the type
+translations translates the size expression right away, this
+example will be caught by the recursive type strategy, and we will
+end up with a type recursion that involves expressions.
+
+\subsection{Variables}
+\label{sec:c2coreVariables}
+The same construct is used in the \ansiC representation to model
+global variables, local variables, formal parameters, and usertype
+members. Usertype members are not made directly into \coreC
+declarations, but the former three cases are treated similarly
+by the \ctoc translation.
+
+The first step in the translation is to create a \syntax{C\_Decl}
+object and supply it with a type. This step is handled differently
+in the three cases:
+\begin{description}
+\item[Global variables] have this done in pass I of the translation,
+        viz.\ section \ref{sec:c2coreGlobally}. The type is a fresh
+        translation of the \ansiC type.
+\item[Local varlaibles] are created by the translation of the
+        compound statement that contains their definition. The type
+        is a fresh translation of the \ansiC type.
+\item[Formal parameters] are created by the translation of the
+        function. Their type is borrowed from the function's type's
+        parameter list.
+\end{description}
+As part of the first step, subsidiary declarations (see section
+\vref{sec:corecVariables}) are generated for the variable if its
+type demands it. The constructor for the \syntax{C\_Decl} class takes
+care of this, recursively.
+
+Then the variable's name and varmode is transferred to the \coreC
+declaration.
+
+If the variable has an initializer, that is translated and
+installed in the \coreC declaration. As part of the type check,
+the distinction between \cons{FullyBraced} and \cons{SloppyBraced}
+initializer lists has already been resolved, so the translation
+of initializers mostly consists of translating the initializer
+expressions. Each initializer expression should translate to a
+\cons{Value} (see section \vref{sec:c2coreTransExpr})
+without pre- or post-sideeffects. If it does not, an error message
+is emitted\footnote
+        {The type checker does not check for constness of expressions,
+        since a good approximation to the required check is
+        automatically provided here.
+
+        The approximation contains an error, however: a constant
+        expression that uses the \syntax{?:} operator cannot be
+        translated into a single \coreC expression, so it is
+        erroneously flagged as non-constant.}.
+
+\subsubsection{Well-known constants}
+\label{sec:c2coreWellKnownConst}
+The ``\syntax{well-known constant:}'' annotation can be applied to
+a global variable to declare its name as a ``magic constant'' that
+evaluates to an rvalue of the given type when it appears in an
+expression.
+
+This feature is used in shadow headers. \emph{E.g.},
+\syntax{<stdio.h>} contains
+\begin{verbatim}
+extern FILE *const stderr, *const stdin, *const stdout ;
+#pragma cmix well-known constant: stderr stdin stdout
+\end{verbatim}
+which causes \syntax{stderr} \emph{et al.}\ to be not
+variables but primitive expressions of type ``pointer to
+\syntax{FILE}''. The difference from a plain \syntax{const} variable
+is that the binding times of different occurences of \syntax{stderr}
+need not be equal. Thus, the program can contain calls of
+\syntax{fprintf\discretionary{}{}{}(stderr,...)} that are performed
+at spectime and other such calls that are residualized.
+
+The implication for \ctoc is that the \ansiC variables that represent
+these ``magic constants'' should not be translated into \coreC
+variables. Leaf expressions referring to these variables
+should be contained into \cons{Const} expressions instead of
+\cons{Var}.
+
+The annotation is implemented as a special varmode \cons{VarConstant}
+which only appears in the \ansiC representation, not in \coreC.
+In both translation passes, the global variables' varmodes are
+inspected, and \cons{VarConstant} variables are simply ignored.
+Similarly, the varmode is inspected at identifier leaf expressions
+and decides how to translate the expression.
+
+\subsection{Functions}
+In pass I function definitions are treated little differently from
+global variables. In pass II, however, the ``real'' translation to
+\coreC takes place:
+
+From pass I we have a \coreC type for the function. The parameter
+types are located and used to generate \coreC declarations for
+the formal parameters. These are finished off as described in
+section \ref{sec:c2coreVariables}.
+
+The body of the function is translated into a list of basic blocks as
+described below and entered in the \coreC definition. As a by-product
+of this translation the local variables in the body are translated
+into the function's list of local variables, or (if they are
+\syntax{static}) the list of global variables.
+
+The translation of function bodies is akin to the intermediate
+code generator in a compiler. \coreC has other caracteristics
+than most compilers' intermediate code representations, so there
+are also differences.
+Most notably, \ctoc's attitude towards introducing new temporary
+variables is much more cautious than the average intermediate code
+generator's attitude to pseudo-registers.
+
+The temporaries have proved
+to be somewhat confusing to readers (human or machine) of the
+residual program.
+Additionally, while splitting \ansiC expressions into multiple
+\coreC statements is often needed to fulfill the ``only one side
+effect per statement'' principle, it also reduces the compiler's
+freedom to choose the evaluation order of operands to fit its
+optimization, so it should be avoided when possible.
+
+\subsubsection{Proto-flowgraphs}
+\label{sec:c2coreAtoms}
+
+The body of a function is initially translated into a fine-grained
+proto-flowgraph where each \coreC statement is a unit. Only when the
+translation has been completed are the statements collected into
+\coreC basic blocks with an ordinary graph traversal. This
+collection process performs transition compression and dead
+code elimination, so the number of basic
+blocks in the final representation is minimized.
+
+The elements that make up the proto-flowgraph are called
+``atoms''. They come in several flavors, as depicted in
+figure \vref{fig:c2coreAtoms}.
+Every atom maintains a count $n$ of predecessors. When the basic-block
+collection reach an atom with more than one predecessor, an
+unconditional \cons{Goto} jump is generated and a new block
+is started off.
+
+\begin{figure}\begin{center}\small\begin{tabular}{|r@{~}c@{~}l|p{8cm}|}
+\hline
+\multicolumn{3}{|l|}{Grammar} & comments \\
+\hline
+\hline
+$\alpha$ &::=& $\omega$ &
+        \cons{StmtAtom}s and \cons{GotoAtom}s are \emph{simple} atoms.
+        When they are created they have an empty slot where a
+        reference to a successor atom must be plugged in
+        before the proto-flowgraph is collected into basic blocks.\\
+\cline{4-4}
+&$|$& $\cons{IfAtom}(n,e,\coreXref{\alpha_{\mathrm{then}}},
+                        \coreXref{\alpha_{\mathrm{else}}})$ &
+        This atom models the \coreC \cons{If} jump. It does not
+        contain the jump itself, because the pointers to the
+        target basic blocks do not exist until the final collection.
+        Rather, it contains the condition expression (translated
+        to \coreC) and pointers to target atoms. \\
+\cline{4-4}
+&$|$& $\cons{ReturnAtom}(n,j)$ &
+        This atom contains a \coreC \cons{Return} jump. \\
+\cline{4-4}
+&$|$& $\cons{StopperAtom}(n,t)$ &
+        A single \cons{StopperAtom} is generated in each
+        function translation; it represents returning without
+        a value. \syntax{return;} statements jump to this, and
+        a jump to it is inserted at the end of the function
+        body (so it will be reached if control falls over the
+        end of the function).
+
+        This is different from the regular \cons{ReturnAtom}, in that
+        it does not contain a \coreC \cons{Return} jump. The
+        jump is only generated if the atom is actually reached
+        in the collection phase. Then a suitable return
+        expression must be invented. That relieves the
+        following analyses from worrying about missing
+        return expressions.
+
+        The generated return expression depends on the function's
+        return type as defined in figure \vref{fig:c2coreReturnExp}.
+        As it is seen, the generation of a return expression sometimes
+        involves generating a new variable. This is the reason why
+        it is only generated if the \cons{StopperAtom} is reachable, and
+        why the entire function shares a single \cons{StopperAtom}. \\
+\hline
+$\omega$ & $::=$ & $\cons{StmtAtom}(n,\coreXref \alpha ?,s)$ &
+        This atom contains a \coreC statement.
+
+        As a special rule, a \cons{Assign} and \cons{Alloc} statements
+        may have an empty left side as long as it belongs to a
+        \cons{StmtAtom}. However, if the empty left side has not been filled
+        when the basic block generation begins, the statement is
+        thrown away instead of being inserted into the basic block.
+        This facilty is used in the ``Ignore III'' expression
+        translation coercion (figure \vref{fig:c2coreCoerce}, page
+        \pageref{fig:c2coreCoerce}). \\
+\cline{4-4}
+&$|$& $\cons{GotoAtom}(n,\coreXref \alpha ?)$ &
+        A \cons{GotoAtom} is \emph{not} a representation of the \coreC
+        \cons{Goto} jump. It is rather a ``no-op'' atom that is
+        used as a jump target when the code that is jumped to
+        has not yet been translated.
+
+        When collecting atoms into basic blocks, a jump to a
+        GotoAtom is treated just like a jump to its successor. \\
+\hline
+\end{tabular}\end{center}
+\caption{Proto-flowgraph atom types}
+\label{fig:c2coreAtoms}
+\end{figure}
+
+\begin{figure}\begin{center}\begin{tabular}{|l|l|}
+\hline
+Return type & Generated default return expression \\
+\hline \hline
+$\cons{Abstract}(\syntax{void},q)$ & none (in this case only)\\
+$t = \cons{Liftable}(id,q)$ & $\cons{Const}(t,\syntax{0})$ \\
+$t = \cons{Pointer}(id,q)$ & $\cons{Null}(t)$ \\
+Any other $t$ & An anonymous global variable \\
+& $\quad d = \cons{Var}(-,t,\cons{VarIntAuto},-,\ldots)$ \\
+& is generated, and its value is returned \\
+\hline
+\end{tabular}\end{center}
+\caption{Generation of default return expressions}
+\label{fig:c2coreReturnExp}
+\end{figure}
+
+When the successor slot of a \cons{GotoAtom} is filled, it exports its
+predecessor count to the successor, and any later predecessors
+are also counted at the successor.
+
+The exception is if an empty infinite loop is produced. The front
+end of the last edge in the loop detects that it is trying to
+propagate its predecessor count through itself, and sets a flag
+that makes it act like a \cons{StmtAtom} with a discardable statement but
+at least 2 predecessors. Thus in the collection phase an empty
+basic block with an unconditional jump that points to itself is
+generated.
+
+\medskip
+\noindent
+When the basic blocks for a function have been collected, all the
+generated atoms are freed.
+
+\subsubsection{Proto-flowgraph intervals}
+\label{sec:c2coreIntervals}
+In texts about flow graph analysis, an ``interval'' is usually
+a connected subgraph with a single entry node. However, as we
+are here concerned with flow graph \emph{synthesis} it turns
+out to be convenient to use the word for a less strict concept.
+
+In the \ctoc context, an ``interval'' can be thought of simply
+as a subset of the final flow graph with designated entry and
+exit atoms. The intuition is that an interval models the
+proto-flowgraph translation of an \ansiC statment. In
+\begin{verbatim}
+    a = 1; goto foo;
+    while ( 1 ) {
+      b = 42; goto bar;
+    foo:
+      c = a+117;
+    }
+  bar:
+    d = b*c ;
+\end{verbatim}
+the body of the loop naturally translates to a piece of the
+proto-flowgraph that is neither connected nor single-entry.
+
+In practise an interval (represented by the C++ class
+\syntax{Interval}) is just a shorthand for a pair of
+references to an ``entry atom'' and an ``exit atom''.
+
+An interval can have several different forms, shown on figure
+\vref{fig:c2coreIntervals}
+
+\begin{figure}\begin{center}\small\begin{tabular}{|r@{~}c@{~}l|p{10cm}|}
+\hline
+\multicolumn{3}{|l|}{Grammar} & comments \\
+\hline
+\hline
+$I$ & $::=$ & $ [\coreXref\alpha:\coreXref\omega]$ &
+        This is the most general form of an interval. The
+        successor field $\alpha_\omega$ of $\omega$ is
+        is yet empty. \\
+\cline{4-4}
+&$|$& $ [\coreXref\alpha,-]$ &
+        This is equivalent for $[\alpha:\omega_0]$ where
+        $\omega_0$ is a fresh \cons{GotoAtom} that does
+        not have and will never get any predecessors---only
+        this $\omega_0$ does not really exist. \\
+\cline{4-4}
+&$|$& $ [-] $ &
+        The \emph{trivial interval}, equivalent to
+        $[\alpha_0:\alpha_0]$ where $\alpha_0$ is
+        a fresh \cons{GotoAtom}. \\
+\hline
+& & $ s $ &
+        In the defintions of \coreC generation, a
+        \coreC statement can appear where an interval is
+        expected. That is a shorthand for $[\alpha:\alpha]$,
+        where $\alpha=\cons{StmtAtom}(0,-,s)$ is a new atom. \\
+\hline
+\end{tabular}\end{center}
+\caption{Interval types}
+\label{fig:c2coreIntervals}
+\end{figure}
+
+A concatenation operator $+$ for intervals is defined by
+$[\alpha_1:\omega_1] + [\alpha_2:\omega_2] = [\alpha_1:\omega_2]$
+and has the side effect of connecting $\omega_1$ to $\alpha_2$.
+
+\subsubsection{Translating \ansiC statements}
+\label{sec:c2coreStatements}
+Using the interval concept, \ansiC statements can translate
+themselves to \coreC in a natural, recursive way. The translation is
+parameterised on
+\begin{itemize}
+\item [$\coreXref{\alpha_R}$:] the atom to jump to if a
+        \syntax{return;} without an expression is encountered.
+\item [$\coreXref{\alpha_B}$:] the atom to jump to from a
+        \syntax{break;} statement.
+\item [$\coreXref{\alpha_C}$:] the atom to jump to from a
+        \syntax{continue;} statement.
+\item [$e_S$:] the expression that is tested in the innermost
+        enclosing \syntax{switch} statement.
+\item [$\coreXref{\coreXref{a_D}}$:] when translating the
+        \syntax{default:} label, this reference is set to
+        point to the atom it translates to. Later, the
+        \syntax{switch} translation generates a jump to
+        it if control falls through the test chain.
+\item [$\coreXref{I_S}$:] references the interval in which
+        the test chain of the innermost enclosing
+        \syntax{switch} statement is being built. The
+        translation of a \syntax{case} label adds a
+        test to the end of the chain.
+\item [$\coreXref{\vec d_L}$:] the list of declarations
+        local \syntax{auto} or \syntax{register} variables
+        and temporary variables should be added to when
+        translated.
+\item [$\coreXref{\vec d_G}$:] the list of declarations
+        local \syntax{static} variables should be added to
+        when translated.
+\end{itemize}
+The result of the the translation of a statement is an
+interval, together with possible changes to the $a_D$, $I_S$,
+$d_L$, and $d_G$ parameters.
+
+The rest of this section summarizes the non-trivial features
+of the translation:
+\begin{description}
+\item[\syntax{goto} and labeled statements:] For each label,
+        a single \cons{GotoAtom} is generated to function
+        as the target for \syntax{goto} jumps. This atom
+        is generated when the label itself is translated,
+        or when a \syntax{goto} statement referring to it
+        is translated, whichever comes first.
+\item[\syntax{switch}, \syntax{case}, and \syntax{default:}]
+        The controlling expression in a \syntax{switch} is
+        translated into a $\cons{Value}(I,e,-)$ (see section
+        \vref{sec:c2coreExprRtn} for a description of different
+        ways to translate expressions).
+
+        Then the body is translated with $I_S$ initiallised
+        to $I$ and $a_D$ initially empty. The translation of
+        the \syntax{case:} labels then incrementally add
+        tests to $I_S$ to form the test chain.
+
+        If a \syntax{default:} label has not been met in the
+        body, one is generated and appended to the translated
+        body $I_B$. Then $\omega_{I_S}$ is connected to the
+        \syntax{default} label and the translation of the
+        whole \syntax{switch} statement is now $[\alpha_{I_S}:\omega_{I_B}]$.
+
+\begin{figure}
+  \begin{frameit}
+  \begin{center}
+        This figure has not been drawn yet.
+  %  \leavevmode
+  %  \epsfig{file=struct1.eps,height=0.7\textheight,width=0.7\textwidth}
+  \end{center}
+  \end{frameit}
+  \caption{Translation of \syntax{switch} statements}
+  \label{fig:c2coreSwitch}
+\end{figure}
+
+\item[\syntax{if} statements:] The expression is translated
+        to a \cons{BoolRtn}; its ``then'' and ``else'' branches
+        are connected to the translated then and else
+        branches\footnote
+                {The \ansiC parser generates empty
+                else brances in else-less ifs}.
+        A \cons{GotoAtom} is generated to serve as the exit
+        of the translated statement; both branches are connected
+        to it.
+\item[loop statements:] The translation is obvious from the
+        semantics of \ansiC loops, although there are many
+        details to keep track of in the implementation.
+\item[\syntax{return} statements] If the \syntax{return} statement
+        has an expression, it is translated into
+        $\cons{Value}(I,e,-)$. A \cons{ReturnAtom} is generated
+        and appended to $I$.
+
+        \syntax{return;} without an expression is translated to
+        $[\alpha_R:-]$.
+\end{description}
+
+\subsection{Expression translation}
+The following description of expression translations depend
+on the ``atom'' and ``interval'' concepts defined in sections
+\ref{sec:c2coreAtoms} and \ref{sec:c2coreIntervals}. In the
+expression translation context an interval is always a
+genuine single entry, single exit subgraph.
+
+\subsubsection{Generating \coreC expressions}
+\cons{PtrArith}, \cons{PtrCmp}, and \cons{Binary} expressions
+are generated with the same constructor in C++. This constructor
+can distinguish between the three cases by inspecting the
+operands and the operator. In the following, applications
+of this constructor are simply notated $\cons{Binary}(e_1,\circ,e_2)$.
+
+The rules for structural sharing of types (section
+\ref{sec:corecTypeSharing}) are enforced by the constructors for
+\cons{Var}, \cons{PtrArith}, \cons{Member}, \cons{Array}, and
+\cons{DeRef} expressions. These constructors do not take a type
+parameter, and when one of those expressions are created in
+this description, the type parameter is not shown.
+
+Similarly, the constructors for \cons{Unary}, \cons{PtrCmp},
+\cons{Binary}, \cons{SizeofType}, and \cons{SizeofExpr} knows
+how to construct their types themselves. They are shown with
+the type parameter omitted in the following, too.
+
+\cons{Const}, \cons{Null}, and \cons{Cast} expressions are
+always constructed with an explicit \coreC type.
+
+\bigskip
+
+\noindent\begin{tabular}{|l|l|}
+\hline
+\multicolumn{2}{|c|}{Pseudocode notation for building flow graph} \\
+\hline
+\hline
+$x <- \mbox{blah blah blah}$
+        & Define $x$ for the rest of the translation step \\
+$\installleft{e}{\vec s}$
+        & Set the left side of each $s$ to a fresh copy of $e$ \\
+$\atomconnect{\omega}{\alpha}$
+        & Establish atom $\alpha$ as the successor of $\omega$ \\
+$==> \ldots$
+        & The result of the translation is ``$\ldots$''. \\
+\hline
+\end{tabular}
+
+\subsubsection{Translated expression representations}
+\label{sec:c2coreExprRtn}
+In order to minimize the need for introducing temporary
+variables or allocating parts of the \coreC program that
+later turn out to be unused, we do not fix a single canonical
+shape for the result of translating an expression. Rather,
+depending on the shape of an expression it can be translated
+into one of the first four forms shown on figure \vref{fig:c2coreExprRtn}.
+
+\begin{figure}\begin{center}\small\begin{tabular}{|r@{~}c@{~}l|p{10cm}|}
+\hline
+\multicolumn{3}{|l|}{Grammar} & comments \\
+\hline
+\hline
+$\mathcal R$ & $::=$ & $\cons{Value}(I,e,\vec s)$ &
+        $e$ is a \coreC expression that evaluates to
+        the same value as the original expression,
+        provided that $I$ has been executed first.
+        $\vec s$ is a list of \coreC statements that
+        perform side effects to take place \emph{after}
+        $e$ has been evaluated. \\
+\cline{4-4}
+&$|$& $\cons{Place}(I,e,\vec s)$ &
+        This is the same as \cons{Value}, except that
+        $e$ evaluates to a pointer to the object that
+        the original (lvalue) expression referred to,
+        rather than its value. \\
+\cline{4-4}
+&$|$& $\cons{Statements}(I,\vec{\coreXref s})$ &
+        Each possible execution path of $I$ contains
+        exactly one of the statements $\vec s$, and the
+        value assigned by that statement is the value
+        of the original expression. The statements
+        have yet empty left-hand sides which are filled
+        according to the expression's context. \\
+\cline{4-4}
+&$|$& $\cons{BoolBranch}(\coreXref \alpha,
+                \coreXref{\omega_1},\coreXref{\omega_0})$ &
+        The original expression is a boolean value. When
+        execution starts at $\alpha$ it comes out at
+        $\omega_1$ or $\omega_0$ according to the expressions,
+        value. \\
+\cline{4-4}
+&$|$& $\cons{Ignored}(I)$ &
+        The expression's value is ignored.
+        The interval $I$ performes its side effects. \\
+\hline
+\end{tabular}\end{center}
+\caption{The different results of expression translation}
+\label{fig:c2coreExprRtn}
+\end{figure}
+
+The \cons{Ignored} form is never spontaneously generated
+by an expression but is required in certain contexts.
+
+\subsubsection{Coercions}
+If the context of an expressions requires another form than
+the one it actually translates to, it is coerced into the
+correct form by one or more of the primitive coercions in
+figure \vref{fig:c2coreCoerce}. The sequence of primitive
+coercions is determied uniquely by the rules
+\begin{itemize}
+\item[a)] An $\mathcal R$ is never coerced \emph{away from} a form
+        that the context can accept without further coercion.
+\item[b)] If generation is performed only when \cons{BoolBranch}
+        is the only form accepted by the context.
+\item[c)] Assignment generation is not performed where if generation
+        applies.
+\end{itemize}
+
+\begin{figure}\begin{displaymath}\begin{array}{|l|l|l|}
+\hline
+\mbox{Name} & \mbox{input} & \mbox{action} \\
+\hline
+\hline
+\mbox{Dereference} & \cons{Place}(I,e,\vec s) &
+   ==> \cons{Value}(I,\cons{DeRef}(e),\vec s) \\
+\hline
+\mbox{Tempvar} & \cons{Statements}(I,\vec s) &
+   \mbox{Create temporary variable $d$ of appropriate type} \\
+&& \installleft{\cons{Var}(d)}{\vec s} \\
+&& ==> \cons{Place}(I,\cons{Var}(d),-) \\
+\hline
+\mbox{Zero/one} & \cons{BoolBranch}(\alpha,\omega_1,\omega_0) &
+   I_1 <- \cons{Assign}(-,\cons{Const}(\cons{Primitive}(-,\syntax{int}),
+                        \syntax{1})) \\
+&& I_0 <- \cons{Assign}(-,\cons{Const}(\cons{Primitive}(-,\syntax{int}),
+                        \syntax{0})) \\
+&& \omega <- \mbox{fresh \cons{GotoAtom}} \\
+&& \forall i \in \{1,0\}: \atomconnect{\omega_i}{\alpha_{I_i}} \\
+&& \forall i \in \{1,0\}: \atomconnect{\omega_{I_i}}{\omega} \\
+&& ==> \cons{Statements}([\alpha:\omega],\{s_1,s_0\}) \\
+\hline
+\mbox{Assignment generation} & \cons{Value}(I,e,\vec s) &
+   s' <- \cons{Assign}(-,e) \\
+&& ==> \cons{Statements}(I+s'+\vec s,s') \\
+\hline
+\mbox{If generation} & \cons{Value}(I,e,\vec s) &
+   I_{\neq 0} <- \mbox{new interval containg fresh copies of }\vec s \\
+&& I_0 <- \mbox{new interval containing the statements }\vec s \\
+&& \alpha <- \cons{IfAtom}(e,\alpha_{I_{\neq 0}},\alpha_{I_0}) \\
+&& \atomconnect{\omega_I}{\alpha} \\
+&& ==> \cons{BoolBranch}(\alpha_I,\omega_{I_{\neq 0}},\omega_{I_0}) \\
+\hline
+\mbox{Ignore I} & \cons{Value}(I,e,\vec s) &
+   ==> \cons{Ignored}(I+\vec s) \\
+\mbox{Ignore II} & \cons{Place}(I,e,\vec s) &
+   ==> \cons{Ignored}(I+\vec s) \\
+\mbox{Ignore III} & \cons{Statements}(I,\vec s) &
+   \installleft{-}{\vec s} \\
+&& ==> \cons{Ignored}(I) \\
+\mbox{Ignore IV} & \cons{BoolBranch}(\alpha,\omega_1,\omega_0) &
+   \omega <- \mbox{fresh \cons{GotoAtom}} \\
+&& \forall i \in \{1,0\}: \atomconnect{\omega_i}{\omega} \\
+&& ==> \cons{Ignored}([\alpha:\omega]) \\
+\hline
+\end{array}\end{displaymath}
+\caption{Coercions for translated expressions}
+\label{fig:c2coreCoerce}
+\end{figure}
+
+In some cases the
+context wants a $\cons{Value}(I,e,-)$, \ie, with an empty
+post-statement list. A
+post-statement list is emptied by performing assignment generation,
+temporary introduction, and dereferencing in that order.
+
+\subsubsection{Translating \ansiC expressions}
+\label{sec:c2coreTransExpr}
+The translation of the various forms of \ansiC expressions are as
+follows:
+
+\begin{figure}\begin{displaymath}\begin{array}{|l|l|}
+\hline
+\mbox{Primitive} & \mbox{action} \\
+\hline
+\hline
+\mbox{Variable identifier} &
+  d <- \mbox{the \coreC declaration for the variable} \\
+& ==> \cons{Place}([-],\cons{Var}(d),-) \\
+\mbox{Internal function name} &
+  d <- \mbox{the \coreC declaration for the function} \\
+& ==> \cons{Value}([-],\cons{Var}(d),-) \\
+\mbox{External function name} &
+  t <- \mbox{fresh copy of \syntax{foo}'s type} \\
+& ==> \cons{Value}([-],\cons{Const}(\cons{Pointer}(-,t),\syntax{foo}),-) \\
+\mbox{Enumeration constant} &
+  \epsilon <- \mbox{(look up the constant's definiton)} \\
+& ==> \cons{Value}([-],\cons{EnumConst}(\epsilon),-) \\
+\mbox{Well-known constant} &
+  t <- \mbox{fresh copy of the constant's type} \\
+& ==> \cons{Value}([-],\cons{Const}(t,\syntax{baz}),-) \\
+\mbox{Numeric constant} &
+  ==> \cons{Value}([-],\cons{Const}(\cons{Primitive}(-,...),\syntax{42}),-) \\
+\mbox{String literal} &
+  \mbox{Create initialized global array of \syntax{char} $d$} \\
+& ==> \cons{Place}([-],\cons{Var}(d),-) \\
+\hline
+\end{array}\end{displaymath}
+\caption{Translating primary expressions}
+\label{fig:c2corePrimary}
+\end{figure}
+
+\begin{figure}\begin{displaymath}\begin{array}{|l|l|l|}
+\hline
+\mbox{Operator} & \mbox{\syntax{e} translates to} & \mbox{actions} \\
+\hline
+\hline
+\syntax{e.id} & \cons{Place}(I,e,\vec s) &
+   m <- \mbox{(look up the index of the member)} \\
+&& ==> \cons{Place}(I,\cons{Member}(e,m),\vec s) \\
+\syntax{e->id} & \cons{Value}(I,e,\vec s) &
+   m <- \mbox{(look up the index of the member)} \\
+&& ==> \cons{Place}(I,\cons{Member}(e,m),\vec s) \\
+\hline
+\syntax{e}\!\circ\!\circ & \cons{Place}(I,e,\vec s) &
+   e' <- \mbox{fresh copy of }e \\
+&& e'' <- \mbox{fresh copy of }e \\
+&& s' <- \cons{Assign}(e',\cons{Binary}(\cons{DeRef}(e''),\circ,\syntax{1})) \\
+&& ==> \cons{Place}(I,e,s' + \vec s) \\
+\hline
+\circ\!\circ\!\syntax{e} & \cons{Place}(I,e,\vec s) &
+   e' <- \mbox{fresh copy of }e \\
+&& e'' <- \mbox{fresh copy of }e \\
+&& s' <- \cons{Assign}(e',\cons{Binary}(\cons{DeRef}(e''),\circ,\syntax{1})) \\
+&& ==> \cons{Place}(I+e',e,\vec s) \\
+\hline
+\syntax{\&e} & \cons{Place}(I,e,\vec s) &
+   ==> \cons{Value}(I,e,\vec s) \\
+\syntax{*e} & \cons{Value}(I,e,\vec s) &
+   ==> \cons{Place}(I,e,\vec s) \\
+\syntax{+e} & {\mathcal R} &
+   ==> {\mathcal R} \\
+\syntax{-e} & \cons{Value}(I,e,\vec s) &
+   ==> \cons{Value}(I,\cons{Binary}(\syntax{-},e),\vec s) \\
+\syntax{\char`\~e} & \cons{Value}(I,e,\vec s) &
+   ==> \cons{Value}(I,\cons{Binary}(\syntax{\char`\~},e),\vec s) \\
+\syntax{!e} & \cons{Value}(I,e,\vec s) &
+   ==> \cons{Value}(I,\cons{Binary}(\syntax{!},e),\vec s) \\
+& \cons{BoolBranch}(\alpha,\omega_T,\omega_F) &
+   ==> \cons{BoolBranch}(\alpha,\omega_F,\omega_T) \\
+\hline
+\syntax{sizeof e} & \cons{Value}(I,e,\vec s) &
+   ==> \cons{Value}([-],\cons{SizeofExpr}(e),-) \\
+\syntax{sizeof (T)} & - &
+   t <- \mbox{translation of \syntax{T}} \\
+&& ==> \cons{Value}([-],\cons{SizeofType}(t),-) \\
+\hline
+\syntax{(T) e} & \cons{Value}(I,e,\vec s) &
+   t <- \mbox{translation of \syntax{T}} \\
+&& ==> \cons{Value}(I,\cons{Cast}(t,e),\vec s) \\
+\hline
+\end{array}\end{displaymath}
+\caption{Translating unary expressions}
+\label{fig:c2coreUnary}
+\end{figure}
+
+\begin{figure}\begin{displaymath}\begin{array}{|l|ll|l|}
+\hline
+\mbox{Operator} & \multicolumn{2}{l|}{\mbox{operand translations}}
+   & \mbox{actions} \\
+\hline
+\hline
+\syntax{=} & \cons{Place}(I,e,\vec s) & \cons{Statements}(I',\vec {s'} &
+    \installleft{e}{\vec{s'}} \\
+&&& ==>\cons{Place}(I+I',e,\vec s) \\
+\hline
+\circ\syntax{=} & \cons{Place}(I,e,\vec s) & \cons{Value}(I',e',\vec{s'} &
+    e_0 <- \mbox{fresh copy of }e \\
+&&& e_1 <- \mbox{fresh copy of }e \\
+&&& s_0 = \cons{Assign}(e,\cons{Binary}(\cons{DeRef}(e_0),\circ,e')) \\
+&&& ==> \cons{Place}(I+I'+s_0,e_1,\vec s + \vec{s'} \\
+\hline
+\verb.&&. & \cons{Value}(I,e,\vec s) & \cons{Value}([-],e',-) &
+    ==> \cons{Value}(I,\cons{Binary}(e,\syntax{\&\&},e'),\vec s) \\
+& \cons{BoolBranch}(\alpha,\omega_T,\omega_F)
+& \cons{BoolBranch}(\alpha',\omega'_T,\omega'_F) &
+    \atomconnect{\omega_T}{\alpha'} \\
+&&& \omega_0 <- \mbox{new \cons{GotoAtom}} \\
+&&& \atomconnect{\omega_F}{\omega_0} \\
+&&& \atomconnect{\omega'_F}{\omega_0} \\
+&&& ==> \cons{BoolBranch}(\alpha,\omega'_T,\omega_0) \\
+\verb.||. & & & \mbox{mutatis mutandi} \\
+\hline
+\syntax{,} & \cons{Ignored}(I_0) & \cons{Value}(I,e,\vec s) &
+    ==> \cons{Value}(I_0+I,e,\vec s) \\
+& \cons{Ignored}(I_0) & \cons{Place}(I,e,\vec s) &
+    ==> \cons{Value}(I_0+I,e,\vec s) \\
+& \cons{Ignored}(I_0) & \cons{Statements}(I,\vec s) &
+    ==> \cons{Statements}(I_0 + I,\vec s) \\
+& \cons{Ignored}(I_0) & \cons{BoolBranch}(\alpha,\omega_1,\omega_0) &
+    \atomconnect{\omega_{I_0}}{\alpha} \\
+&&& ==> \cons{BoolBranch}(\alpha_I,\omega_1,\omega_0) \\
+\hline
+\mbox{other } \circ & \cons{Value}(I,e,\vec s) & \cons{Value}(I',e',\vec{s'}) &
+    ==> \cons{Value}(I+I',\cons{Binary}(e,\circ,e'),\vec s+\vec{s'}) \\
+\hline
+\syntax{[]} & \cons{Value}(I,e,\vec s) & \cons{Value}(I',e',\vec{s'}) &
+    ==> \cons{Place}(I+I',\cons{Binary}(e,\syntax{+},e'),\vec s+\vec{s'}) \\
+\hline
+\end{array}\end{displaymath}
+\caption{Translating binary expressions}
+\label{fig:c2coreBinary}
+\end{figure}
+
+\begin{description}
+\item[Primary expressions.] The translation is shown on figure
+        \vref{fig:c2corePrimary}.
+\item[Postfix expressions.] Except for array subscripting (which is
+        shown on figure \vref{fig:c2coreBinary}) and function
+        call, the translation is shown on figure
+        \vref{fig:c2coreUnary}.
+\item[Function calls.]
+        \begin{displaymath}\begin{array}{|l|l|}
+        \hline
+        \syntax{e}_0\syntax{(e}_1\ldots\syntax{e}_n\syntax{)} &
+          \forall i \leq n: \cons{Value}(I_i,e_i,-) <-
+                \mbox{translation of \syntax{e}}_i \\
+        & s <- \cons{Call}(-,e_0,e_1\ldots e_n) \\
+        & ==> \cons{Statements}(I_0 + \cdots + I_n + s,s) \\
+        \hline
+        \end{array}\end{displaymath}
+\item[Unary operators and casts.] The translation is shown on figure
+        \vref{fig:c2coreUnary}.
+\item[Binary operators.] The translation is shown on figure
+        \vref{fig:c2coreBinary}.
+\item[The conditional operator.]
+        \begin{displaymath}\begin{array}{|l|l|}
+        \hline
+        \syntax{e}_0\syntax{?e}_1\syntax{:e}_2 &
+          \cons{BoolBranch}(\alpha,\omega_2,\omega_3) <-
+                \mbox{translation of \syntax{e}}_0 \\
+        & \forall i \in \{1,2\}: \cons{Statements}(I_i,\vec{s_i}) <-
+                \mbox{translation of \syntax{e}}_i \\
+        & \forall i \in \{1,2\}: \atomconnect{\omega_i}{\alpha_{I_i}} \\
+        & \omega <- \mbox{new \cons{GotoAtom}} \\
+        & \forall i \in \{1,2\}: \atomconnect{\omega_{I_i}}{\omega} \\
+        & ==> \cons{Statements}([\alpha,\omega],\vec{s_2}\cup\vec{s_3}) \\
+        \hline
+        \end{array}\end{displaymath}
+\end{description}
+
+\subsection{Implementation level (1998-11-16)}
+Not very much of the \ctoc translation yet works as described
+here. The old translation that is still used emits many temporary
+variables that the translation described here avoids.
+
+A full implementation of the described translation will have to
+wait until the relevant parts of \coreC, especially the orthogonal
+left-hand sides of statements, have been implemented.
+
+\begin{itemize}
+\item Sections \ref{sec:c2coreAtoms} and \ref{sec:c2coreIntervals}
+have already been implemented, except for the \cons{StopperAtom},
+and except that intervals are called \syntax{FlowGraph} in the code.
+\item The basic principles of the statement translation in
+section \ref{sec:c2coreStatements} have been implemented. Instead
+of $I_S$ only an $\omega_S$ is part of the parameterization.
+$\vec d_L$ and $\vec d_G$ are global variables, not translation
+parameters.
+\end{itemize}
+
+\end{docpart}
+
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 

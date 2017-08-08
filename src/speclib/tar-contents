@@ -1,0 +1,15 @@
+vpending.c
+memhash.c
+rusage.c
+auxilary.c
+pending.c
+restruct.c
+Dependencies
+GNUmakefile.in
+floats.c
+longdouble.c
+unparse.c
+code.c
+code.h
+mem.c
+speclib.h

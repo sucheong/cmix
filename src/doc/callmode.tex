@@ -1,0 +1,175 @@
+% Edit Mode: -*- LaTeX -*-
+% File: callmode.tex
+% Time-stamp: <98/06/08 12:33:53 panic>
+% $Id: callmode.tex,v 1.2 1999/05/13 10:58:38 skalberg Exp $
+
+\providecommand{\docpart}{\input{separatehead}}
+\title{Annotation of External Functions}
+\author{Jens Peter Secher}
+\begin{docpart}
+\maketitle
+%\documentclass[a4paper]{cmixdoc}
+
+\section{Call-modes}
+\label{sec:callmodes}
+
+To avoid making worst-case assumptions about the effects of calls to
+\emph{external} functions, the user can give a description to \cmix on
+how (a call to) a particular external function behaves by annotating
+external functions and/or individual call-sites.
+
+\subsection{Function description}
+The following \emph{function} annotations exists:
+
+\begin{quote}
+\begin{description}
+\item[\texttt{pure}] means that the function is a function in a
+  mathematical sense.  Example: \texttt{strcmp()}.
+\item[\texttt{stateless}] means that the function possibly performs
+  side-effects on its arguments, but otherwise does not depend on any
+  external objects. Example: \texttt{strcpy()}.
+\item[\texttt{ROstate}] means that the value returned depend on the
+  state of some external object, but that this external state is not
+  changed by the function. The function may, however, perform
+  side-effects on its arguments. Example: \texttt{feof()}.
+\item[\texttt{RWtate}] means that the function might change the state
+  of some externally defined object, or perform side-effects on its
+  arguments.  Example: \texttt{scanf()}. This is the default if an
+  external function is unannotated.
+\end{description}
+\end{quote}
+These categories form a proper-subset chain:
+\[ \mathtt{pure} \subset \mathtt{stateless} \subset \mathtt{ROstate}
+   \subset \mathtt{RWstate}
+\] 
+
+These annotations are primary a vehicle to describe standard
+functions: \cmix is shipped with a set of shadow header files that
+conform with the ISO/ANSI standard. Functions declared in these header
+files are pre-annotated with the above mentioned annotations.
+
+The annotations can, however, also be used by users when
+{\specialis}ation of non-monolithic programs --- see the User Manual
+section on separate {\specialis}ation.
+
+\subsection{Call-site description}
+Each call-site inherits the description of 
+The following \emph{call-site} annotations exists:
+
+\begin{quote}
+\begin{description}
+\item[\texttt{spectime}] instructs \cmix to make the call at specialization
+  time.
+\item[\texttt{residual}] instructs \cmix to make the call at residual time.
+\item[(no annotation)] makes \cmix choose the call-time as it pleases.
+\end{description}
+\end{quote}
+
+Any call-site can thus be classified according the above categories,
+which are then used by the various analysis. The following subsections
+will describe how each analysis responds to calls to external
+functions.
+
+\subsection{PA}
+The points-to analysis maintains two special pools of objects: the
+spectime pool and the residual pool. Any object can be contained in at
+most one of these pools, depending on \emph{when} the object is alive.
+Calls to external functions are classified thus:
+
+\begin{tabular}{l|c|c|c|c|} 
+                  & \texttt{pure} & \texttt{stateless} &
+                  \texttt{ROstate} & \texttt{RWtate} \\
+\hline
+\texttt{spectime} & & & 3 & 4 \\
+\cline{1-1}\cline{4-5}
+\texttt{residual} & 1 & 2 & & \\
+\cline{1-1}
+(\cmix chooses) & & & 
+                  \raisebox{1.5ex}[0cm][0cm]{5} & \raisebox{1.5ex}[0cm][0cm]{6} \\
+\hline
+\end{tabular}
+
+\begin{enumerate}
+\item Any object (with the right type) reachable from the arguments
+  can be returned.
+\item Any object (with the right type) reachable from the arguments
+  can be returned. Any pointer object reachable from the arguments can
+  be written to and thus point to any object (with the right type)
+  reachable from the arguments.  
+\item Any pointer object reachable from the arguments can be written
+  to and thus point to any object (with the right type) in the
+  spectime pool. 
+\item Any pointer object reachable from the arguments can be written
+  to and thus point to any object (with the right type) in the
+  spectime pool. Furthermore, any object reachable from the
+  arguments is added to the spectime pool.
+\item Like 3, but with ``spectime pool'' replaced by ``residual pool''.
+\item Like 4, but with ``spectime pool'' replaced by ``residual pool''.
+\end{enumerate}
+
+
+\subsection{BTA}
+The binding-time analysis uses the classification of calls to external
+functions thus:
+
+\begin{tabular}{l|c|c|c|c|} 
+                  & \texttt{pure} & \texttt{stateless} &
+                  \texttt{ROstate} & \texttt{RWtate} \\
+\hline
+\texttt{spectime} & \multicolumn{3}{c|}{1} & 2 \\
+\hline
+\texttt{residual} & \multicolumn{4}{c|}{}  \\
+\cline{1-3}
+(\cmix chooses) & \multicolumn{2}{c|}{4} & 
+                  \multicolumn{2}{c|}{\raisebox{1.5ex}[0ex][0ex]{3\quad}} \\
+\hline
+\end{tabular}
+
+\begin{enumerate}
+\item The call is made at {\specialis}ation time and is allowed to be
+  under dynamic control. All arguments must be completely spectime.
+\item The call is made at {\specialis}ation time and is \emph{not}
+  allowed to be under dynamic control. All arguments must be
+  completely spectime.
+\item The call is made at residual time. All arguments must be
+  residual or liftable.
+\item All arguments are forced to be either completely spectime or
+  completely residual. The call is made accordingly.
+\end{enumerate}
+
+
+\subsection{Dataflow}
+The dataflow analysis uses the classification of calls to external
+functions thus:
+
+
+\begin{tabular}{l|c|c|c|c|} 
+                  & \texttt{pure} & \texttt{stateless} & \texttt{ROstate} & \texttt{RWtate} \\
+\hline
+\texttt{spectime} & & & 3 & 4 \\
+\cline{1-1}\cline{4-5}
+\texttt{residual} & 1 & 2 & & \\
+\cline{1-1}
+(\cmix chooses) &  & & \raisebox{1.5ex}[0cm][0cm]{5} & \raisebox{1.5ex}[0cm][0cm]{6} \\
+\hline
+\end{tabular}
+
+
+\begin{enumerate}
+\item The call might read from objects reachable from the arguments.
+\item The call might write to or read from objects reachable from the
+  arguments. 
+\item All objects in the spectime pool might be read. All objects
+  reachable from the arguments might be read or written.
+\item All objects in the spectime pool and objects reachable from the
+  arguments might be read or written.
+\item Like 3, but with ``spectime pool'' replaced by ``residual pool''.
+\item Like 4, but with ``spectime pool'' replaced by ``residual pool''.
+\end{enumerate}
+
+\end{docpart}
+
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 

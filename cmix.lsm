@@ -1,0 +1,22 @@
+Begin3
+Title: C-Mix/II, a program specializer for C.
+Version: 2.0.11
+Entered-date: 30MAR00
+Description: A program specializer or, as it is also called, a "partial
+   evaluator" takes the source code for a program or a routine and
+   (commonly) some of its input, and tries to produce faster but
+   equivalent code, utilizing the fact that some of the variables will
+   have known values so that some of the program's actions can be
+   precomputed. This allows one to combine the maintainability of a
+   generic parameterized source code with the speed of programs
+   optimized for specific problem instances.
+Keywords: C, partial evaluator, specializer
+Author: cmix@diku.dk (Development team mailalias)
+Maintained-by: cmix@diku.dk (Development team mailalias)
+Primary-site: ftp.diku.dk /diku/dists/cmix
+              590KB cmix-2.0.11-src.tar.gz
+              552KB cmix-2.0.11-doc.tar.gz
+Alternate-site: metalab.unc.edu /pub/Linux/devel/lang/c
+Platforms: Main system is written in C++, compiles with gcc 2.8.1 or newer
+Copying-policy: FRS
+End

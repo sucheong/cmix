@@ -1,0 +1,63 @@
+Summary: A partial evaluator for the ANSI C language
+Name: cmix
+Version: @Version@
+Release: @Release@
+Copyright: GPL
+Vendor: (none)
+Packager: The C-Mix Team <cmix@diku.dk>
+Distribution: DIKU, University of Copenhagen
+URL: http://www.diku.dk/research-groups/topps/activities/cmix/
+Group: Development/Tools
+Icon: cmixicon.gif
+Source0: ftp.diku.dk:/diku/semantics/cmix/cmix-@Version@-src.tar.gz
+Source1: ftp.diku.dk:/diku/semantics/cmix/cmix-@Version@-doc.tar.gz
+Source2: ftp.diku.dk:/diku/semantics/cmix/cmix-@Version@-test.tar.gz
+
+%description
+C-Mix takes as input a program, p, written in
+standard C, that runs on input
+(s1, s2, ..., r1, r2, ...).
+
+s1, s2, ... are spectime input and r1, r2, ... are
+residual input.
+
+C-Mix then generates a new specialised program,
+p_s, which can be run on the residual input,
+r1, r2, ...
+
+The result of running p_s(r1, r2, ...) is the same
+as running p(s1, s2, ..., r1, r2, ...), only
+faster.
+
+C-Mix requires a standard C compiler during its
+operation.
+
+The package includes some examples for
+specialisation, among others a minimal ray
+tracer. To view the result of ray tracing, a
+suitable graphics API (SRGP, PTC or OpenGL) is
+required.
+%prep
+%setup -n cmix-@Version@ -T -b 1 -b 0
+
+%build
+./configure
+make
+
+%install
+make install
+
+%files
+%doc README COPYING.cmix Changelog
+%doc doc/exercises/exercises.dvi doc/exercises/color-pow-ann-ps.gz
+%doc doc/exercises/selectvisible-ps.gz
+%doc doc/manual/manual.dvi doc/manual/intro-cpe.eps
+%doc doc/manual/intro-cplx.eps doc/manual/intro-ic.eps
+
+/usr/local/bin/cmix
+/usr/local/bin/cmixshow
+/usr/local/lib/libcmix.a
+/usr/local/share/cmix
+/usr/local/man/man1/cmix.1
+/usr/local/man/man1/cmixshow.1
+

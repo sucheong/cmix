@@ -1,0 +1,111 @@
+% $Id: infra.tex,v 1.3 1999/04/21 13:12:10 jpsecher Exp $
+
+\providecommand{\docpart}{\input{separatehead}}
+\begin{docpart}
+
+\begin{center}
+  \fbox{\huge\textsl{THIS SECTION IS OUT-OF-DATE}}    
+\end{center}
+
+\section{Boring infrastructure details}
+\label{sec:Infrastructure}
+
+This section describes a number of infrastructure details that work
+behind the scenes and support the analyses.
+
+\subsection{Command line and option processing}
+
+\subsection{Specializer directive parser}
+
+\subsection{Connection between C and Core C representations}
+
+\subsection{Source code positions}
+
+\subsection{Error and Warning messages}
+
+\subsection{Lists and sets}
+
+One of these days some better documentation than the following
+will be written.
+
+Traversing a list is very close to running through an array. If you
+\eg want to traverse a structure \syntax{decls} of type
+\syntax{list<C\_Decl*>*}, you can do it by using an \emph{iterator} in
+a simple \syntax{for}-loop:
+\begin{verbatim}
+    for(list<C_Decl*>::iterator i = decl->begin(); i++; i!=decl->end())
+    {
+         (*i)->get_name() ...
+    }
+\end{verbatim}
+
+A macro is defined in \verb|auxilary.h| which shorens the above to
+\begin{verbatim}
+    FOREACH(i, decl, C_Decl*)
+    {
+         (*i)->get_name() ...
+    }
+\end{verbatim}
+
+Observe that an iterator works as a pointer to an element of an array.
+There are several operations on lists, whereof a few are listed in
+figure~\ref{fig:listops}.
+
+\begin{figure}[htbp]
+  \begin{frameit}
+    \leavevmode
+    A list is parameterized over a type $T$.
+
+    \noindent{\small
+    \begin{tabular}{ll}
+    \syntax{iterator  begin();}
+      & Iterator to the first element. \\
+    \syntax{iterator  end();}
+      & Iterator to the last element. \\
+    \syntax{unsigned size();} & \\
+    \syntax{bool      empty();} & \\
+    \syntax{reference front();} 
+      & Reference to the first element. \\
+    \syntax{reference back();}
+      & Reference to the last element. \\
+    \syntax{void      push\_front($T$*);}
+      & Insert as first element. \\
+    \syntax{void      push\_back($T$*);}
+      & Insert as last element. \\
+    \syntax{iterator  insert(iterator p, $T$*);}
+      & Insert an element before position p. \\
+    \syntax{void      splice(iterator p, list<$T$>\& x);}
+      & Insert list x before position p. \\
+    \end{tabular}}
+  \caption{Some members of the \syntax{Plist} class.}
+  \label{fig:listops}
+  \end{frameit}
+\end{figure}
+
+\subsection{Associative arrays}
+
+\subsection{Inverse Sets}
+Inverse sets (or complement sets) are implemented by a regular set and
+a boolean value that tells whether the set is inversed or not. The
+union, intersection and set difference can be calculated as follows:
+\[
+\begin{array}{rclrclrcl}
+  & \bigcup & & & \bigcap & & & \setminus \\
+  \complement X \cup \complement Y &=& \complement(X \cap Y)
+  & \complement X \cap \complement Y &=& \complement(X \cup Y) 
+  & \complement X \setminus \complement Y &=& Y \setminus X \\
+  \complement X \cup Y &=& \complement(X \setminus Y)
+  & \complement X \cap Y &=& Y \setminus X 
+  & \complement X \setminus Y &=& \complement(X \cup Y) \\
+  X \cup \complement Y &=& \complement(Y \setminus X)
+  & X \cap \complement Y &=& X \setminus Y 
+  & X \setminus \complement Y &=& X \cap Y \\
+\end{array}
+\]
+Inverse sets are used in the dataflow analysis.
+
+\end{docpart}
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 

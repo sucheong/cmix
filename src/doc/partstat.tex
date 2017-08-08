@@ -1,0 +1,1022 @@
+% File: partstat.tex
+
+\providecommand{\docpart}{\input{separatehead}}
+\title{Binding Time Dependency Information}
+\author{Arne John Glenstrup}
+\begin{docpart}
+\maketitle
+
+\MakeShortVerb{"}
+
+
+\begin{center}
+  \fbox{\huge\textsl{THIS SECTION IS OUT-OF-DATE}}    
+\end{center}
+
+\section{Partially Static Data}
+\label{sec:PartiallyStaticData}
+\index{partially static data}
+\index{data!static!partially}
+\index{struct!splitting}
+\index{array!splitting}
+
+The binding time analysis may result in some complex data structures like
+structs or arrays  being classified as \emph{partially static}, e.g.~some
+members of a struct are static and some dynamic. In the case of arrays, the
+length might be known (static), but the contents is unknown (dynamic). In
+these cases it is desirable to remove the static parts of the data
+structures, thus in effect \emph{changing their type}: structs in the
+residual program have fewer members, and arrays are split up into
+individual variables.
+
+This separation of static and dynamic parts of data structures can be done
+as a preprocessing before the actual specialization phase,
+and~\cite[section~3.3.1]{Andersen:1997:StaticMemoryManagementInCMix}
+points out that it is a key transformation for keeping the time spent
+during the specialization phase low. He gives an example of the splitting
+transformation:\bigskip
+
+\noindent
+\begin{minipage}[c]{.45\textwidth}
+\begin{alltt}
+struct P \{ int x, y; \}; /*\rlap{\hspace{6em}*/} \(S\x{D}\)     
+                      
+ 
+struct P pair;          /*\rlap{\hspace{6em}*/} \(S\x{D}\)
+
+
+struct P *p;            /*\rlap{\hspace{6em}*/} \(*(S\x{D})\)
+
+
+int a[42];              /*\rlap{\hspace{6em}*/} \([42]D\) 
+
+struct P b[42];         /*\rlap{\hspace{6em}*/} \([42](S\x{D})\)
+
+
+pair.x;
+pair.y;
+p->x;
+p->y;
+a[3];
+b[4].x;
+b[4].y;
+\end{alltt}
+\end{minipage}
+\hfil
+$\displaystyle\mathop{==>}\limits\sp{\mathit{split}}$
+\hfil
+\begin{minipage}[c]{.40\textwidth}
+\begin{alltt}
+struct P\(\sb{s}\) \{ int x; \};
+struct P\(\sb{d}\) \{ int y; \};
+
+struct P\(\sb{s}\) pair\(\sb{s}\);
+struct P\(\sb{d}\) pair\(\sb{d}\);
+
+struct P\(\sb{s}\) *p\(\sb{s}\);
+struct P\(\sb{d}\) *p\(\sb{d}\);
+
+int a0, a1, ..., a42;
+
+struct P\(\sb{s}\) b0\(\sb{s}\), b1\(\sb{s}\), ..., b41\(\sb{s}\);
+struct P\(\sb{d}\) b0\(\sb{d}\), b1\(\sb{d}\), ..., b41\(\sb{d}\);
+
+pair\(\sb{s}\).x;
+pair\(\sb{d}\).y;
+p\(\sb{s}\)->x;
+p\(\sb{d}\)->y;
+a3;
+b4\(\sb{s}\).x;
+b4\(\sb{d}\).y;
+\end{alltt}
+\end{minipage}\medskip
+
+Although it looks tempting to split arrays of known length in
+a preprocessing phase, it is hard to see that it would be sensible
+in practise: expressions like "d = a[s]" (where "s" is statically known but
+not a $\Ppann$ constant) would have to be translated into
+\begin{center}
+"switch (s) { 0 : d = a0; break;  1 : d = a1; break;  ... ;  41 : d = a41; break; }"
+\end{center}
+in $\Ppann$, and furthermore translated into \coreC's
+"if"-"goto" constructions, resulting in myriads of basic blocks! 
+Instead,
+we will content ourselves with letting the gegen phase_{phase!gegen}
+translate staic-length arrays with dynamic content into
+\begin{alltt}
+/* \Ppgen \textnormal{\emph{source code}} */
+int a0, a1, ..., a41;
+Code a[42] = \{ \emit{a0}, \emit{a1}, ..., \emit{a41} \};
+
+struct P\(\sb{s}\) b\(\sb{s}\)[42];
+struct P\(\sb{d}\) b0\(\sb{d}\), b1\(\sb{d}\), ..., b41\(\sb{d}\);
+Code b\(\sb{d}\)[42] = \{ \emit{b0\(\sb{d}\)}, \emit{b1\(\sb{d}\)}, ..., \emit{b41\(\sb{d}\)} \};
+
+d = a[s];
+s = b\(\sb{s}\)[4].x;
+d = b\(\sb{d}\)[4].y;
+\end{alltt}
+where $\emit{\cdot} : \DObject -> \TCode$ is some function returning the
+$\TCode$ representation of its argument.  Doing array splitting this way,
+static-length arrays still end up as individual variables in the residual
+program, and $\Ppann$ has not exploded.
+
+\paragraph{Structs in functions returns.} When passing a partially static 
+struct as a return value from a function call, somehow both the static and
+dynamic struct part must be returned, but in C, only one value can be
+returned. We therefore \emph{extend} \coreC_{Core C!extension beyond C}
+\emph{beyond} C
+so that the "return" statement always takes a tuple containing 
+the static and dynamic return value. If either or both of these are empty,
+"null" is passed as argument: \bigskip
+
+\noindent
+\begin{minipage}[c]{.30\textwidth}
+\begin{alltt}
+struct P pair; /* \(S\x{D}\) */
+
+
+struct P f(...) \{
+  ...
+  return pair;
+\}    
+\end{alltt}
+\end{minipage}
+\hfil
+$\displaystyle\mathop{==>}\limits\sp{\mathit{split}}$
+\hfil
+\begin{minipage}[c]{.55\textwidth}
+\begin{alltt}
+struct P\(\sb{s}\) pair\(\sb{s}\);
+struct P\(\sb{d}\) pair\(\sb{d}\);
+
+struct P f(...) \{
+  ...
+  return (pair\(\sb{s}\), pair\(\sb{d}\));
+\}
+\end{alltt}
+\end{minipage}
+\bigskip
+
+\noindent
+The tuple is eliminated during the gegen phase_{phase!gegen}, so $\Ppgen$
+will of course contain legal C code.  But as this needs special treatment,
+\emph{the $\Ppann$ splitting does not change function return
+  types_{type!function return}_{type!splitting}.} We have also chosen that
+\emph{function declarations_{declaration!function} are never
+  split_{splitting!function} into two declarations}, as this could
+dramatically increase the overhead in administrating the static
+store_{store!static} in the specialization phase_{phase!specialization}.
+
+
+\subsection{Splitting transformation}
+\label{sec:PSDSplittingTransformation}
+
+The two principles in splitting is that
+\begin{enumerate}
+\item every object (e.g.~variable, struct, array) should be either 
+  static_{data!static} or dynamic_{data!dynamic} data.
+\item every pointer that can point to partially static data is transformed
+  into a struct with two members, "s" and "d", that are static pointers to
+  static and dynamic data.
+\item Assignments that copy both static and dynamic data are split into two 
+  assignments.
+\end{enumerate}
+When we split a struct assignment, we might have to split recursively into
+nested structs_{struct!nested}. 
+If nested struct types are viewed as trees, we must perform the split such that
+all static leaf nodes end up in the static substruct and all the dynamic
+leaf nodes in the dynamic substruct.  
+Figure~\vref{fig:SplittingNested} shows how a struct containing an array of
+known length (3) of partially static structs is represented in the
+generating extension.
+\begin{figure}[htb]
+  \begin{center}\lineskip 1em
+\leavevmode
+\setlength{\unitlength}{0.0025\textwidth}%
+\begin{tabular}[b]{c}
+\begin{picture}(160,90)(-60,-90)
+\thinlines
+\put(  0,  0){\circle{4}}
+  \put(  0,  0){\line(-4,-3){40}}
+  \put(  0,  0){\line( 0,-1){30}}
+  \put(  0,  0){\line( 1,-1){30}}
+
+\put(-40,-30){\circle{4}}
+  \put(-40,-30){\line(-1,-3){10}}
+  \put(-40,-30){\line( 1,-3){10}}
+\put(  0,-30){\circle*{4}}
+  {\thicklines
+  \put(  0,-30){\line(-1,-3){10}}
+  \put(  0,-30){\line( 1,-3){10}}}
+\put( 30,-30){\circle{4}}
+  \put( 30,-30){\line( 0,-1){30}}
+
+\put(-50,-60){\circle{4}}
+  \put(-50,-60){\line(-1,-3){10}}
+  \put(-50,-60){\line( 1,-3){10}}
+\put(-30,-60){\circle{4}}
+\put(-10,-60){\circle*{4}}
+  {\thicklines
+  \put(-10,-60){\line(-1,-3){10}}
+  \put(-10,-60){\line( 1,-3){10}}}
+\put( 10,-60){\circle*{4}}
+\put( 30,-60){\circle{4}}
+  \put( 30,-60){\line( 1, 0){30}}
+  \put( 30,-60){\line(-1,-3){10}}
+  \put( 30,-60){\line( 1,-3){10}}
+\put( 60,-60){\circle{4}}
+  \put( 60,-60){\line( 1, 0){30}}
+  \put( 60,-60){\line(-1,-3){10}}
+  \put( 60,-60){\line( 1,-3){10}}
+\put( 90,-60){\circle{4}}
+  \put( 90,-60){\line(-1,-3){10}}
+  \put( 90,-60){\line( 1,-3){10}}
+
+\put(-60,-90){\circle{4}}
+\put(-40,-90){\circle{4}}
+\put(-20,-90){\circle*{4}}
+\put(  0,-90){\circle*{4}}
+\put( 20,-90){\circle{4}}
+\put( 40,-90){\circle*{4}}
+\put( 50,-90){\circle{4}}
+\put( 70,-90){\circle*{4}}
+\put( 80,-90){\circle{4}}
+\put(100,-90){\circle*{4}}
+\end{picture}
+\\
+$\Ppann$ struct $S$
+\end{tabular}
+\begin{tabular}[b]{c}{\small
+\begin{picture}(160,90)(-60,-90)
+\thinlines
+\put(  0,  0){\circle{4}}
+  \put(  0,  0){\line(-4,-3){40}}
+  \multiput(  0,  0)( 0,-3){10}{\makebox(0,0){.}}
+  \put(  0,  0){\line( 1,-1){30}}
+
+\put(-40,-30){\circle{4}}
+  \put(-40,-30){\line(-1,-3){10}}
+  \put(-40,-30){\line( 1,-3){10}}
+%\put(  0,-30){\circle*{4}}
+  \multiput(  0,-30)(-1,-3){11}{\makebox(0,0){.}}
+  \multiput(  0,-30)( 1,-3){11}{\makebox(0,0){.}}
+\put( 30,-30){\circle{4}}
+  \put( 30,-30){\line( 0,-1){30}}
+
+\put(-50,-60){\circle{4}}
+  \put(-50,-60){\line(-1,-3){10}}
+  \put(-50,-60){\line( 1,-3){10}}
+\put(-30,-60){\circle{4}}
+%\put(-10,-60){\circle*{4}}
+  \multiput(-10,-60)(-1,-3){11}{\makebox(0,0){.}}
+  \multiput(-10,-60)( 1,-3){11}{\makebox(0,0){.}}
+%\put( 10,-60){\circle*{4}}
+\put( 30,-60){\circle{4}}
+  \put( 30,-60){\line( 1, 0){30}}
+  \put( 30,-60){\line(-1,-3){10}}
+  \multiput( 30,-60)( 1,-3){11}{\makebox(0,0){.}}
+\put( 60,-60){\circle{4}}
+  \put( 60,-60){\line( 1, 0){30}}
+  \put( 60,-60){\line(-1,-3){10}}
+  \multiput( 60,-60)( 1,-3){11}{\makebox(0,0){.}}
+\put( 90,-60){\circle{4}}
+  \put( 90,-60){\line(-1,-3){10}}
+  \multiput( 90,-60)( 1,-3){11}{\makebox(0,0){.}}
+
+\put(-60,-90){\circle{4}}
+\put(-40,-90){\circle{4}}
+%\put(-20,-90){\circle*{4}}
+%\put(  0,-90){\circle*{4}}
+\put( 20,-90){\circle{4}}
+%\put( 40,-90){\circle*{4}}
+\put( 50,-90){\circle{4}}
+%\put( 70,-90){\circle*{4}}
+\put( 80,-90){\circle{4}}
+%\put(100,-90){\circle*{4}}
+\end{picture}}
+\\
+static $\Ppgen$ substruct $S_s$
+\end{tabular}
+\begin{tabular}[b]{c}
+\begin{picture}(160,90)(-60,-90)
+\thinlines
+\put(  0,  0){\circle{4}}
+  \multiput(  0,  0)(-2.5,-1.9){16}{\makebox(0,0){.}}
+  \put(  0,  0){\line( 0,-1){30}}
+  \put(  0,  0){\line( 1,-1){30}}
+
+%\put(-40,-30){\circle{4}}
+  \multiput(-40,-30)(-1,-3){11}{\makebox(0,0){.}}
+  \multiput(-40,-30)( 1,-3){11}{\makebox(0,0){.}}
+\put(  0,-30){\circle*{4}}
+  {\thicklines
+  \put(  0,-30){\line(-1,-3){10}}
+  \put(  0,-30){\line( 1,-3){10}}}
+\put( 30,-30){\circle{4}}
+  \put( 30,-30){\line( 0,-1){30}}
+
+%\put(-50,-60){\circle{4}}
+  \multiput(-50,-60)(-1,-3){11}{\makebox(0,0){.}}
+  \multiput(-50,-60)( 1,-3){11}{\makebox(0,0){.}}
+%\put(-30,-60){\circle{4}}
+\put(-10,-60){\circle*{4}}
+  {\thicklines
+  \put(-10,-60){\line(-1,-3){10}}
+  \put(-10,-60){\line( 1,-3){10}}}
+\put( 10,-60){\circle*{4}}
+\put( 30,-60){\circle{4}}
+  \put( 30,-60){\line( 1, 0){30}}
+  \multiput( 30,-60)(-1,-3){11}{\makebox(0,0){.}}
+  {\thicklines
+  \put( 30,-60){\line(1,-3){10}}}
+\put( 60,-60){\circle{4}}
+  \put( 60,-60){\line( 1, 0){30}}
+  \multiput( 60,-60)(-1,-3){11}{\makebox(0,0){.}}
+  {\thicklines
+  \put( 60,-60){\line( 1,-3){10}}}
+\put( 90,-60){\circle{4}}
+  \multiput( 90,-60)(-1,-3){11}{\makebox(0,0){.}}
+  {\thicklines
+  \put( 90,-60){\line( 1,-3){10}}}
+
+%\put(-60,-90){\circle{4}}
+%\put(-40,-90){\circle{4}}
+\put(-20,-90){\circle*{4}}
+\put(  0,-90){\circle*{4}}
+%\put( 20,-90){\circle{4}}
+\put( 40,-90){\circle*{4}}
+%\put( 50,-90){\circle{4}}
+\put( 70,-90){\circle*{4}}
+%\put( 80,-90){\circle{4}}
+\put(100,-90){\circle*{4}}
+\end{picture}
+\\
+dynamic $\Ppgen$ substruct $S_d$
+\end{tabular}
+\begin{tabular}[b]{c}
+\begin{picture}(160,90)(-60,-90)
+\thicklines
+\put(  0,  0){\circle*{4}}
+  \multiput(  0,  0)(-2.5,-1.9){16}{\makebox(0,0){.}}
+  \put(  0,  0){\line( 0,-1){30}}
+  \put(  0,  0){\line( 1,-2){30}}
+  \put(  0,  0){\line( 1,-1){60}}
+  \put(  0,  0){\line( 3,-2){90}}
+
+%\put(-40,-30){\circle{4}}
+  \multiput(-40,-30)(-1,-3){11}{\makebox(0,0){.}}
+  \multiput(-40,-30)( 1,-3){11}{\makebox(0,0){.}}
+\put(  0,-30){\circle*{4}}
+  {\thicklines
+  \put(  0,-30){\line(-1,-3){10}}
+  \put(  0,-30){\line( 1,-3){10}}}
+%\put( 30,-30){\circle{4}}
+  \multiput( 30,-30)( 0,-3){10}{\makebox(0,0){.}}
+
+%\put(-50,-60){\circle{4}}
+  \multiput(-50,-60)(-1,-3){11}{\makebox(0,0){.}}
+  \multiput(-50,-60)( 1,-3){11}{\makebox(0,0){.}}
+%\put(-30,-60){\circle{4}}
+\put(-10,-60){\circle*{4}}
+  {\thicklines
+  \put(-10,-60){\line(-1,-3){10}}
+  \put(-10,-60){\line( 1,-3){10}}}
+\put( 10,-60){\circle*{4}}
+\put( 30,-60){\circle*{4}}
+  \multiput( 30,-60)( 3, 0){10}{\makebox(0,0){.}}
+  \thicklines
+  \multiput( 30,-60)(-1,-3){11}{\makebox(0,0){.}}
+  \put( 30,-60){\line(1,-3){10}}
+\put( 60,-60){\circle*{4}}
+  \multiput( 60,-60)( 3, 0){10}{\makebox(0,0){.}}
+  \multiput( 60,-60)(-1,-3){11}{\makebox(0,0){.}}
+  \put( 60,-60){\line( 1,-3){10}}
+\put( 90,-60){\circle*{4}}
+  \multiput( 90,-60)(-1,-3){11}{\makebox(0,0){.}}
+  \put( 90,-60){\line( 1,-3){10}}
+
+%\put(-60,-90){\circle{4}}
+%\put(-40,-90){\circle{4}}
+\put(-20,-90){\circle*{4}}
+\put(  0,-90){\circle*{4}}
+%\put( 20,-90){\circle{4}}
+\put( 40,-90){\circle*{4}}
+%\put( 50,-90){\circle{4}}
+\put( 70,-90){\circle*{4}}
+%\put( 80,-90){\circle{4}}
+\put(100,-90){\circle*{4}}
+\end{picture}
+\\
+residual $\Ppres$ substruct $S_{\mathit{res}}$
+\end{tabular}
+    \caption{Splitting nested structures into static and dynamic components}
+    \label{fig:SplittingNested}
+  \end{center}
+\end{figure}
+Notice how a layer of indirection has been specialized away in the residual 
+program: the constant-length array has been replaced by direct references. 
+
+As we must change the type of some pointers we assume given a predicate,
+$\FpsdPtr : \DE -> \Dbool$, to determine whether a pointers points to
+partially static data. In general, we say a type $t$ is
+\emph{splitable}_{type!splitable} if it contains both static and dynamic
+parts. For instance, in Figure~\ref{fig:SplittingNested} only the topmost
+node and its rightmost child are splittable. Note that a pointer is
+\emph{not} splitable: it is either static, pointing to static/partially
+static or dynamic data, or dynamic, pointing to dynamic data.
+
+The output of the split phase is a program where each assignment copies
+only fully static or fully dynamic values, where every parameter is either
+fully static or fully dynamic, and where the types are binding-time
+annotated with subscripts $s$ or $d$ according to with the following
+notation:
+\begin{center}
+\begin{tabular}{ll}\label{tab:PSDannotatedTypes}
+$\CPointer_s$   & $\CPointer_s^s$ or $\CPointer_s^d$ \\
+$\CPointer_s^s$ & static pointer to static data, $\CArray_s^s$ or $\CUser_s^s$
+\\
+$\CPointer_s^d$ & static pointer to dynamic data, $\CArray_s^d$ or $\CUser_s^d$ \\
+$\CArray_s^s$ & array of known length of static elements \\
+$\CArray_s^d$ & array of known length of dynamic elements \\
+$\CUser_s^s$ & static struct with only static members \\
+$\CUser_s^d$ & static struct with only dynamic members \\
+\end{tabular}
+\end{center}
+
+In the following, we define a number of split functions_{split function}
+for various syntactical constructs:
+\[
+\begin{array}{lcl}
+  \Fsplitt &:& \DT -> (\DT \x \DT + \DT \x \DNil + \DNil \x \DT) \\
+  \Fsplitd &:& \DD -> (\DD \x \DD + \DD \x \DNil + \DNil \x \DD) \\
+  \Fsplite &:& \DE -> (\DE \x \DE + \DE \x \DNil + \DNil \x \DE) \\
+  \Fsplit_{=} &:& \DAssignment -> \DAssignment \DList \\
+  \Fsplits &:& \DS -> \DS \DList \\
+  \Fsplitj &:& \DJ -> \DJ \\
+  \Fsplitb &:& \DB -> \DB \\
+  \Fsplitu &:& \DU -> \DU \DList \\
+  \Fsplitp &:& \DP -> \DP, \\
+\end{array}
+\]
+where $\DAssignment = \{\CAssign(\delta,e), \CPAssign(\delta,e),
+\CStrtAssign(\delta,e,\varphi), \CPStrtAssign(\delta,e,\varphi)  \}$ and
+$\DNil = \{\CNil\}$.
+
+The functions for splitting types is given
+in Figure~\ref{fig:PDSSplitTypes}.%
+\begin{figure}[htbp]
+  \begin{center}
+    \leavevmode\hbox{\vbox{%
+    \begin{pseudocode}
+      $\Fsplitt(t) = \Kif\ \Fbt(t) = D\ \Kthen\ (\CNil, t)\ 
+      \Kelse$ \+\\
+        $\Kcase\ t\ \Kof$ \+\\
+          $\CInt(q), \CFloat(q), ... : (t, \CNil)$ 
+              \\[1ex]
+          $\CPointer(q, t') : {}$ \+\\
+            $\Kcase\ \Fsplitt(t')\ \Kof$ \+\\
+              $(t_s,t_d)$ \ \=:\ \=$(\CUser_s^s(q, \Fsplit_{\sigma}
+                                    ([], t, t_s, t_d)), \CNil)$\\
+              $(t_s,\CNil) $ \>:\> $(\CPointer_s^s(q, t_s), \CNil)$ \\
+              $(\CNil,t_d) $ \>:\> $(\CPointer_s^d(q, t_d), \CNil)$ 
+              \-\-\\[1ex]
+          $\CArray(q, t', \Voe) : {}$ \+\\
+            $\Kcase\ \Fsplitt(t')\ \Kof$ \+\\
+              $(t_s,t_d) $ \ \= : \= 
+              $(\CArray_s^s(q, t_s, \Voe), 
+                \CArray_s^d(q, t_d, \Voe))$ \\
+              $(t_s,\CNil) $\>:\>$(\CArray_s^s(q, t_s, \Voe), \CNil)$\\
+              $(\CNil,t_d) $\>:\>$(\CNil, \CArray_s^d(q, t_d, \Voe))$ 
+              \-\-\\[1ex]
+          $\CFunT(q, t', t_1 ... t_n) : 
+             (\CFunT(q, \Fsplitt(t'), \FsplitArgst(t_1, ..., t_n)),
+              \CNil)$ 
+           \\[1ex]
+          $\CUser(q, \sigma, d_1 ... d_n) : $ \+\\
+            $\Kcase\ \FsplitMems(d_1, ..., d_n)\ \Kof$ \+\\
+              $(\Vss,\Vdd)$ \= : \= 
+                $(\CUser_s^s(q, \sigma_s, \Vss), 
+                  \CUser_s^d(q, \sigma_d, \Vdd))$ \\
+              $(\Vss,[])$ \>:\> $(\CUser_s^s(q, \sigma, \Vss), \CNil)$ \\
+              $([],\Vdd)$ \>:\> $(\CNil, \CUser_s^d(q, \sigma, \Vdd))$ 
+              \-\-\\[1ex]
+          $\CAbstract(q, \Vid) : 
+            \Kif\ \Fbt(t) = D\ \Kthen\ (\CNil, t)\ \Kelse\ (t, \CNil)$
+          \-\-\\[1em]
+      $\FsplitMems(d_1, ..., d_n) = {}$ \+\\
+        $\Kfor\ i \in \{1, ..., n\}\ \Kdo\
+          (\Vss_i, \Vdd_i) := \Fsplitd(d_i)$\\
+        $\Kreturn\ (\Fconcat [\Vss_1, ..., \Vss_n],
+                    \Fconcat [\Vdd_1, ..., \Vdd_n])$ 
+          \-\\[1em]
+      $\FsplitArgs_{\chi}(x_1, ..., x_n) = {}$ \+\\
+        $\Vas := []$ \\
+        $\Kfor\ i = 1, ..., n\ \Kdo$ \+\\
+          $\Kcase\ \Fsplit_{\chi}(x_i)\ \Kof$ \+\\
+            $(x_{s}, x_{d})$ \ \= : \=
+              $\Vas := \Vas \append [x_{s},x_d]$ \\
+            $(x_s, \CNil)$  \>:\> $\Vas := \Vas \append [x_s]$ \\
+            $(\CNil, x_d)$  \>:\> $\Vas := \Vas \append [x_d]$ \-\-\\
+        $\Kreturn\ \Vas$ 
+        \-\\[1em]
+      $\Fsplit_{\sigma}(\Vms, t, t_s, t_d) = {}$ \+\\
+        $\Kcase\ t\ \Kof$ \+\\
+        $\CUser(q, \sigma, d_1 ... d_n) : {} $ \+\\
+\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\kill
+           $\Kif\ \sigma_{\Vms} = \CNull\ \Kthen$ \+\\
+            $\sigma_{\Vms} := \Ffresh();\
+             \delta_s := \Ffresh();\ \delta_d := \Ffresh()$ \\
+            $(\sigma_{\Vms}, \Void, \CStruct_s,
+            \begin{array}[t]{@{}l@{}}
+              \CStructMem(\delta_s, "s", \CPointer_s^s(q, t_s)), \\
+              \CStructMem(\delta_d, "d", \CPointer_s^d(q, t_d)))
+            \end{array} $ \-\\
+          $\Kreturn\ \sigma_{\Vms}$ \-\\
+        $\CArray(q, t, e) : 
+          \Fsplit_{\sigma}([m_1, ..., m_k, e], t, t_s, t_d)$
+    \end{pseudocode}}}
+    \caption{Splitting transformation for \coreC types}
+    \label{fig:PDSSplitTypes}
+  \end{center}
+\end{figure}
+Note that each time a pointer to a (possibly multidimensional) array of
+partially static structs is encountered, we must generate a new struct type
+definition for a struct with two static pointers to arrays of the static and
+dynamic struct parts, e.g.: 
+\begin{center}\def\d{\(\sb{d}\)}\def\s{\(\sb{s}\)}%
+\leavevmode
+\hbox to .3\textwidth{\hss$p$\hss\hss}\hfil
+\hbox to .68\textwidth{\hss$\Ppsplit$\hss\hss}\nopagebreak[4]\smallskip
+\nopagebreak[4]
+
+\small
+\begin{minipage}[t]{.3\textwidth}
+\begin{alltt}
+struct T \verb"{" int s; int d; \verb"}";
+
+
+
+
+
+
+
+struct T  *t0;
+struct T (*t1)[42];
+struct T (*t2)[17];
+struct T (*t3)[17][42];
+struct T (*t4)[42];
+\end{alltt}
+\end{minipage}\hfil
+\begin{minipage}[t]{.68\textwidth}
+\begin{alltt}
+struct T\s \verb"{" int s; \verb"}";
+struct T\d \verb"{" int d; \verb"}";
+
+struct T0    \verb"{" struct T\s  *s;          struct T\d  *d; \verb"}";
+struct T42   \verb"{" struct T\s (*s)[42];     struct T\d (*d)[42]; \verb"}";
+struct T17   \verb"{" struct T\s (*s)[17];     struct T\d (*d)[17]; \verb"}";
+struct T1742 \verb"{" struct T\s (*s)[17][42]; struct T\d (*d)[17][42]; \verb"}";
+
+struct T0    t0;
+struct T42   t1;
+struct T17   t2;
+struct T1742 t3;
+struct T42   t4;
+\end{alltt}
+\end{minipage}
+\end{center}
+For this reason, we keep for each user type $\sigma$ a set of split pointer
+types indexed on the dimension sizes: $\sigma_{\Vms}$ where $\Vms =
+[m_1,...,m_k]$. The function $\Fsplit_{\sigma}$ makes sure to reuse any
+previously defined split pointer type (like "t1" and "t4" in the example
+above)---otherwise assignments like "t1 = t4" would become illegal after
+the split.
+
+The split functions for declarations and expressions are
+shown in
+Figures~\ref{fig:PDSSplitDeclarations}--\ref{fig:PDSSplitExpressionsII}.%
+\begin{figure}[htbp]
+  \begin{center}
+    \leavevmode\hbox{\vbox{%
+    \begin{pseudocode}
+      $\Fsplitd(d) = {}$ \+\\
+        $\Kcase\ d\ \Kof$ \+\\
+          $\CVar(\delta, \Void, t, \Vocs) : {}$ \+\\
+            $\Kcase\ \Fsplitt(t)\ \Kof$ \+\\
+              $(t_s, t_d) : $ \+\\
+                $(\Vocs_s, \Vocs_d) := \FsplitInits(t,\Vocs)$ \\
+                $\delta_s := \Ffresh();\ \delta_d := \Ffresh()$ \\
+                $\Kreturn\ (\CVar_s(\delta_s, \Void, t_s, \Vocs_s),
+                            \CVar_d(\delta_d, \Void, t_d, \Vocs_d))$ \-\\
+              $(t_s,\CNil) : 
+              (\CVar_s(\delta, \Void, t_s, \Vocs), \CNil)$ \\
+              $(\CNil,t_d) : 
+              (\CNil, \CVar_d(\delta, \Void, t_d, \Vocs))$ 
+              \-\-\\[1ex]
+          $\CFun(\delta, \Void, t, d_1 ... d_n, d'_1 ... d'_m,
+                 b_1 ... b_k,) : {}$ \+\\
+            $\CFun(\delta, \Void, t, \FsplitArgsd(d_1, ..., d_n),
+            \FsplitArgsd(d'_1, ..., d'_m), 
+            \Fsplitb(b_1) ... \Fsplitb(b_k))$
+            \-\\[1ex]
+          $\CStructMem(\delta, \Void, t, \Voc) : $ \+\\
+            $\Kcase\ \Fsplitt(t)\ \Kof$ \+\\
+              $(t_s, t_d) : $ \+\\
+                $\delta_s := \Ffresh();\ \delta_d := \Ffresh()$ \\
+                $(\CStructMem_s(\delta_s, \Void_s, t_s, \CNoConst),
+                  \CStructMem_d(\delta_d, \Void_d, t_d, \CNoConst))$
+                  \-\\
+              $(t_s, \CNil) : 
+                (\CStructMem_s(\delta, \Void_s, t_s, \Voc),
+                 \CNil)$ \\
+              $(\CNil, t_d) :  
+                (\CNil, \CStructMem_d(\delta, \Void_d, t_d, \Voc))$ 
+              \-\-\\[1ex]
+          $\CEnumMem(\delta, \Vid, t, \Voc) : {}$ \+\\
+            $\Kif\ \Fbt(\delta) = S\ \Kthen\
+               (\CEnumMem_s(\delta, \Vid, t, \Voc), \CNil)\
+             \Kelse\ \Kerror$
+    \end{pseudocode}}}
+    \caption{Splitting transformation for \coreC declarations}
+    \label{fig:PDSSplitDeclarations}
+  \end{center}
+\end{figure}%
+\begin{figure}[htbp]
+  \begin{center}
+    \leavevmode\hbox{\vbox{%
+    \begin{pseudocode}
+      $\FsplitInits(t, \Vcs) =
+         \Kcase\ \FsplitInits'(t, \Vcs, [], [])\ \Kof\ 
+         (\_\!\_, \Vcs_s, \Vcs_d) : (\Vcs_s, \Vcs_d)$ \\[1em]
+      $\FsplitInits'(t, c:\Vcs, \Vcs_s, \Vcs_d) = {}$ \+\\
+         $\Kcase\ t\ \Kof$ \+\\
+           $\CInt(q), \CFloat(q), ... : 
+            \Kif\ \Fbt(t) = S\ \Kthen\ 
+              (\Vcs, \Vcs_s \append [c], \Vcs_d)\
+            \Kelse\
+              (\Vcs, \Vcs_s, \Vcs_d \append [c])$ 
+              \\[1ex]
+           $\CPointer(q,t') : $ \+\\
+             $\Kcase\ \Fsplitt(t)\ \Kof$ \+\\
+               $(\CUser(...), \CNil) : {}$ \+\\
+                 $\Kcase\ c\ \Kof$ \+\\
+                   $\CBinary(e_1, \pm, e_2)$ \= : \= \kill
+                   $\CRval(\delta)$ \> : \> 
+                     $(\Vcs, \Vcs_s \append 
+                     [\CRval(\delta)], \Vcs_d)$ \\
+                   $\CLval(\delta)$ \> : \>
+                     $(\Vcs, \Vcs_s \append 
+                     [\CLval(\delta_s),
+                      \CLval(\delta_d)], \Vcs_d)$ \\
+                   $\CConst("NULL")$ \> : \>
+                     $(\Vcs, \Vcs_s \append ["NULL", "NULL"],
+                             \Vcs_d)$ \\
+                   $\CUnary("&", \CRval(\delta))$ \> : \> 
+                     $(\Vcs, \Vcs_s  \append 
+                     [\CUnary("&", \CRval(\delta_s)),
+                      \CUnary("&", \CRval(\delta_d))], \Vcs_d)$ \\
+                   $\CUnary(\Vuop, e_1)$ \> : \> ? \\
+                   $\CBinary(e_1, \pm, e_2)$ \> : \>
+                     $(\Vcs, \Vcs_s \append 
+                        [
+                        \begin{array}[t]{@{}l@{}}
+                          \CBinary(\CMember(e_1, "s"), \pm, e_2), \\
+                          \CBinary(\CMember(e_1, "d"), \pm, e_2)]),
+                          \Vcs_d)
+                        \end{array}$ \\
+                   $\CCast(t, e_1)$ \> : \> ? \\
+                   $\CMember(e_1, \varphi)$ \> : \> ? \-\-\\
+               $(\CPointer_s, \CNil) :
+                  (\Vcs, \Vcs_s \append [c], \Vcs_d)$ \\
+               $(\CNil, \CPointer_d) :
+                  (\Vcs, \Vcs_s, \Vcs_d \append [c])$ \-\-
+             \\[1ex]
+           $\CArray(q,t',e) : {}$ \+\\
+             $\Vcs := c:\Vcs$\\
+             $\Kfor\ i = 1, ..., \Fvalue(e)\ \Kdo\
+               (\Vcs, \Vcs_s, \Vcs_d) := 
+                 \FsplitInits'(t', \Vcs, \Vcs_s, \Vcs_d)$ \\
+             $\Kreturn\ (\Vcs, \Vcs_s, \Vcs_d)$ 
+             \-\\[1ex]
+%           $\CFunT(q, t, t_1 ... t_n) : 
+%            \CFunT(q, t, \FsplitArgs(t_1, ..., t_n))$ 
+%           \\[1ex]
+           $\CUser(q, \sigma, d_1 ... d_n) : {}$ \+\\
+             $\Kfor\ \varphi = 1, ..., n\ \Kdo\
+               (\Vcs, \Vcs_s, \Vcs_d) := 
+                 \FsplitInits'(t_{d_\varphi}, \Vcs, \Vcs_s, \Vcs_d)$ \\
+             $\Kreturn\ (\Vcs, \Vcs_s, \Vcs_d)$ 
+             \-\\[1ex]
+           $\CAbstract(q, \Vid) : ???$
+    \end{pseudocode}}}
+    \caption{Splitting transformation for \coreC initializers}
+    \label{fig:PDSSplitInitializers}
+  \end{center}
+\end{figure}%
+\begin{figure}[htbp]
+  \begin{center}\leavevmode\hbox{\vbox{%
+    \begin{pseudocode}
+      $\Fsplite(e) = \Kif\ \Fbt(e) = D\ \Kthen\ (\CNil, e)\ \Kelse$ \+\\
+        $\Kcase\ e\ \Kof$ \+\\
+          $\CRval(\delta) : $ \+\\
+            $\Kcase\ \Fsplitt(t_\delta)\ \Kof$ \+\\
+              $(t_s,t_d)$ \ \= : \= $(\CRval(\delta_s), \CRval(\delta_d))$ \\
+              $(t_s,\CNil)$ \> : \> $(\CRval(\delta), \CNil))$ \\
+              $(\CNil,t_d)$ \> : \> $(\CNil, \CRval(\delta))$
+              \-\-\\[1ex]
+\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\kill
+          $\CLval(\delta) : $ \+\\
+            $\Kcase\ \Fsplitt(t_\delta)\ \Kof$ \+\\
+              $(t_s,t_d) : {}$ \+\\
+                $\Vtemp := \Ffresh()$ \\
+                $\VpreStmt := \VpreStmt \append
+                [{\Vtemp}".s = "\CLval(\delta_s),\
+                 {\Vtemp}".d = "\CLval(\delta_d)]$ \\
+                $\Kreturn\ (\CRval(\delta_{\Vtemp}), \CNil)$ \-\\
+              $(t_s,\CNil)$ \= : \= $(\CLval_s(\delta), \CNil)$ \\
+              $(\CNil,t_d)$ \> : \> $(\CLval_s(\delta), \CNil)$
+              \-\-\\[1ex]
+\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\kill
+          $\CConst(c) : {}$ \+\\
+            $\Kif\ \FpsdPtr(e)\ \Kthen$ \+\\
+               $(\CConst_s("NULL"_{\Vpsd}), \CNil)$ \-\\
+             $\Kelse$ \+\\
+               $\Kif\ \Fbt(e) = D\ \Kthen\ 
+                  (\CNil, \CConst_d(c))\
+                \Kelse\
+                  (\CConst_s(c), \CNil)$ 
+              \-\-\\[1ex]
+          $\CUnary("*",e_1) : {}$ \+\\
+            $\Kif\ \FpsdPtr(e_1)\ \Kthen$ \+\\
+              $(\CUnary_s("*", \CMember(e_1, "s")), 
+                \CUnary_s("*", \CMember(e_1, "d")))$ \-\\
+            $\Kelse$ \+\\
+              $\Kcase\ \Fsplite(e_1)\ \Kof$ \+\\
+                $(e_s, \CNil)$ \=: \= $(\CUnary_s("*", e_s), \CNil)$ \\
+                $(\CNil, e_d)$ \>: \> $(\CNil, \CUnary_d("*", e_d))$ 
+              \-\-\-\\[1ex]
+          $\CUnary("&",e_1) : $ \+\\
+            $\Kcase\ \Fsplite(e_1)\ \Kof$ \+\\
+              $(e_s,e_d) : {}$ \+\\
+                $\Vtemp := \Ffresh()$ \\
+                $\VpreStmt := \VpreStmt \append
+                [{\Vtemp}".s = "\CUnary_s("&", e_s),\
+                 {\Vtemp}".d = "\CUnary_s("&", e_d)]$ \\
+                $\Kreturn\ (\CRval(\delta_{\Vtemp}), \CNil)$ \-\\
+              $(e_s, \CNil)$ \=: \= $(\CUnary_s("&", e_s), \CNil)$ \\
+              $(\CNil, e_d)$ \>: \> $(\CUnary_s("&", e_d), \CNil)$ 
+              \-\-\\[1ex]
+          $\CUnary(\Vuop,e_1) : $ \+\\
+            $\Kcase\ \Fsplite(e_1)\ \Kof$ \+\\
+              $(e_s,e_d)$ \ \= : \= 
+                $(\CUnary_s(\Vuop, e_{s}), \CUnary_d(\Vuop, e_{d}))$ \\
+              $(e_s, \CNil)$ \>:\> $(\CUnary_s(\Vuop, e_s), \CNil)$ \\
+              $(\CNil, e_d)$ \>:\> $(\CNil, \CUnary_d(\Vuop, e_d))$ 
+              \-\-\\[1ex]
+    \end{pseudocode}}}
+    \caption{Splitting transformation for \coreC expressions, part I}
+    \label{fig:PDSSplitExpressionsI}
+  \end{center}
+\end{figure}%
+\begin{figure}[htbp]
+  \begin{center}\leavevmode\hbox{\vbox{%
+    \begin{pseudocode}
+          $\CBinary(e_1,\Vbop,e_2) : $ \+\\
+            $\Kif\ \Vbop = {\pm} \ \land \ {\FpsdPtr}(e_1)\ \Kthen\ 
+              \Kcase\ (\Fsplite(e_1), \Fsplite(e_2))\ \Kof\
+              ((e'_1, \CNil), (e'_2, \CNil)) : {}$ \+\\
+              $\Vtemp := \Ffresh()$ \\
+              $\VpreStmt := \VpreStmt \append
+              [\Vtemp'" = "e'_2,\
+               {\Vtemp}".s = "e'_1".s + "{\Vtemp'},\
+               {\Vtemp}".d = "e'_1".d + "{\Vtemp'}]$ \\
+              $\Kreturn\ (\CRval_s(\delta_{\Vtemp}), \CNil)$ \-\\
+            $\Kelse\ 
+             \Kif\ \Vbop \in \{"-","==","!="\} \ \land \ 
+             {\FpsdPtr}(e_1) \land {\FpsdPtr}(e_2)\ \Kthen\ $ \+\\
+              $\Kcase\ (\Fsplite(e_1), \Fsplite(e_2))\ \Kof$ \+\\
+                 $((e'_1, \CNil), (e'_2, \CNil)) : 
+                  (\CBinary_s(\CMember(e'_1, "s"), \Vbop,
+                               \CMember(e'_2, "s")), \CNil)$ \-\-\\
+            $\Kelse$ \+\\
+              $\Kcase\ (\Fsplite(e_1), \Fsplite(e_2))\ \Kof$ \+\\
+                $((e_{1s}, \CNil), (e_{2s}, \CNil))$ \= : \=
+                  $(\CBinary_s(e_{1s}, \Vbop, e_{2s}), \CNil)$ \\
+                $((\CNil, e_{1d}), (\CNil, e_{2d}))$ \> : \> 
+                  $(\CNil, \CBinary_d(e_{1d}, \Vbop, e_{2d}))$ \\
+                $((\CNil, e_{1d}), (e_{2s}, \CNil))$ \> : \>
+                  $(\CNil, \CBinary_d(e_{1d}, \Vbop, \Flift(e_{2s})))$ \\
+                $((e_{1s}, \CNil), (\CNil, e_{2d}))$ \> : \> 
+                  $(\CNil, \CBinary_d(\Flift(e_{1s}), \Vbop, e_{2d}))$ 
+                \-\-\-\\[1ex]
+          $\CCast(t,e_1) : $ \+\\
+            $\Kcase\ (\Fsplitt(t), \Fsplite(e_1))\ \Kof$ \+\\
+              $((t_s, t_d), (e_s, e_d))$ \quad \= : \= 
+                 $(\CCast_s(t_s, e_s), \CCast_d(t_d, e_d))$ \\
+              $((t_s, \CNil), (e_s, \CNil))$ \>:\> 
+                $(\CCast_s(t_s,e_s), \CNil)$ \\
+              $((\CNil, t_d), (\CNil, e_d))$ \>:\> 
+                $(\CNil, \CCast_d(t_d,e_d))$
+                \-\-\\[1ex]
+\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\quad\=\kill
+          $\CMember(e_1,\varphi) : $ \+\\
+            $\Kcase\ \Fsplite(e_1)\ \Kof$ \+\\
+              $(e_s, e_d) : $ \+\\
+                $\Kcase\ \Fsplitt(t_{(e_1.\varphi)})\ \Kof$ \+\\
+                  $(t_s,t_d)$ \ \= : \= 
+                    $(\CMember_s(e_s, \varphi), 
+                      \CMember_d(e_d, \varphi))$ \\
+                  $(t_s,\CNil)$ \> : \> 
+                    $(\CMember_s(e_s, \varphi), \CNil)$ \\
+                  $(\CNil,t_d)$ \> : \> 
+                    $(\CNil, \CMember_d(e_d, \varphi))$ 
+                    \-\-\\[1ex]
+              $(e_s, \CNil) : $ \+\\
+                $\Kcase\ \Fsplitt(t_{(e_1.\varphi)})\ \Kof$ \+\\
+                  $(t_s,\CNil) : (\CMember_s(e_s, \varphi), \CNil)$
+                    \-\-\\[1ex]
+              $(\CNil, e_d) : $ \+\\
+                $\Kcase\ \Fsplitt(t_{(e_1.\varphi)})\ \Kof$ \+\\
+                  $(\CNil,t_d) : (\CNil, \CMember_d(e_d, \varphi))$
+    \end{pseudocode}}}
+    \caption{Splitting transformation for \coreC expressions, part II}
+    \label{fig:PDSSplitExpressionsII}
+  \end{center}
+\end{figure}%
+
+Function $\Fsplite$_{splite@$\Fsplite$} takes an expression $e$ and returns
+either
+\begin{enumerate}
+\item a  pair of expressions $(e_s, e_d)$ if $e$ has a splitable type, or
+\item a pair  $(e_s, \CNil)$ if $e$'s type is not splitable and
+  is static, or
+\item a pair $(\CNil, e_d)$ if $e$'s type is not splitable and
+  is dynamic.
+\end{enumerate}
+The $e_s$ and $e_d$ components are the expressions by which the static and
+dynamic parts of $e$ should be referenced. For instance,
+\begin{center}
+  $\Fsplite("t") = ("t"_s,"t"_d)$ \qquad 
+  $\Fsplite("t.s") = ("t"_s".s", \CNil)$ \qquad
+  $\Fsplite("t.d") = (\CNil,"t"_d".d")$,
+\end{center}
+assuming "t" is a struct with staic member "s" and dynamic member "d". 
+
+Note that in the cases where an expression is a pointer to partially static
+data (by the \& operator, by adding an integer to a pointer or by the
+constant "NULL"), we must create a new temporary struct containing the two
+versions of the pointer. This is done by adding some struct assignment
+statements as a side effect to a list, $\VpreStmt$.
+
+
+The
+split functions for types and declarations work analogously.
+
+The function $\Fsplit_{=}$_{split=@$\Fsplit_{=}$} shown in
+Figure~\vref{fig:PDSSplittingAssignments} splits any of the four types of
+assignment operations.%
+\begin{figure}[htb]
+  \begin{center}\leavevmode\hbox{\vbox{%
+      \begin{pseudocode}
+$\Fsplit_{=}[[e" = "e']] = {}$ \+\\
+  $\Kcase\ \Fsplite(e')\ \Kof$ \+\\
+    $(e'_s,e'_d)$\ \= : \= $[e\{\delta:=\delta_s\}" ="_s" "e'_s,
+                             e\{\delta:=\delta_d\}" ="_d" "e'_d]$ \\
+    $(e'_s,\CNil)$ \> : \> $[e\{\delta:=\delta_s\}" ="_s" "e'_s]$ \\
+    $(\CNil,e'_d)$ \> : \> $[e\{\delta:=\delta_d\}" ="_d" "e'_d]$ \\
+      \end{pseudocode}}}
+    \caption{Algorithm for splitting assignments into static and dynamic
+      parts. `$e\{\delta:=\delta'\}$' denotes substitution.} 
+    \label{fig:PDSSplittingAssignments}
+  \end{center}
+\end{figure}
+
+These functions can now be used to define splitting functions for
+statements, control statements and basic blocks in
+Figure~\ref{fig:PDSSplitStatementsBBs}.
+\begin{figure}[htbp]
+  \begin{center}
+\[
+    \begin{array}{lll}
+      \textnormal{Statement } s       & \Fsplits(s) \\\hline
+      \CAssign(\delta,e)              & \VpreStmt \append 
+                                        \Fsplit_{=}[[\delta" = "e]] \\
+      \CPAssign(\delta,e)             & \VpreStmt \append 
+                                        \Fsplit_{=}[["*"\delta" = "e]] \\
+      \CStrtAssign(\delta,e,\varphi)  
+         & \VpreStmt \append 
+           \Fsplit_{=}[[\delta"."\varphi" = "e]] \\
+      \CPStrtAssign(\delta,e,\varphi) 
+         & \VpreStmt \append 
+           \Fsplit_{=}[["(*"\delta")."\varphi" = "e]] \\
+      \CCall(\optdelta,\delta,e_1...e_n)
+         & \VpreStmt \append 
+           [\CCall(\optdelta,\delta, \FsplitArgse(e_1,...e_n))] \\
+      \CPCall(\optdelta,\delta,e_1...e_n)
+         & \VpreStmt \append 
+           [\CPCall(\optdelta,\delta, \FsplitArgse(e_1,...,e_n))] \\
+      \CMalloc(\delta,t)
+         & [\CMalloc(\delta_s,t_s), \CMalloc(\delta_d,t_d)], 
+         & \textnormal{if $t$ splitable} \\
+      \CMalloc(\delta,t)
+         & [\CMalloc(\delta,t)], 
+         & \textnormal{else}\\
+      \CCalloc(\delta,t,e)            
+         & [\CCalloc(\delta_s,t_s,e), \CCalloc(\delta_d,t_d,e)],
+         & \textnormal{if $t$ splitable} \\
+      \CCalloc(\delta,t,e)            
+         & [\CCalloc(\delta,t,e)],
+         & \textnormal{else} \\
+      \CFree(e)                       & ??? \\
+      \CSequence                      & ??? 
+      \\[1em]
+      \textnormal{Control statement } j & \Fsplitj(j) \\\hline
+      \CIf(e,l_1,l_2)   & \CIf(\tilde{e},l_1,l_2) \\
+      \CGoto(l)         & \CGoto(l) \\
+      \CReturn(\CNoExp) & \CReturn(\CNoExp, \CNoExp) \\
+      \CReturn(e)  & \CReturn(\Fsplite(e)) \\[1ex]
+      \mc{3}{l}{\textnormal{where } \tilde{e} = 
+        \begin{array}[t]{@{}l@{}}
+          \Kcase\ \Fsplite(e)\ \Kof \\
+          \quad (e_s, e_d)   : \Kerror \\
+          \quad (e_s, \CNil) : e_s \\
+          \quad (\CNil, e_d) : e_d \\
+        \end{array}}\\
+      \\
+      \textnormal{Basic block } b & \Fsplitb(b) \\\hline
+      (l, \Void,s_1...s_n,j) &
+      \mc{2}{l}{
+        (l, \Void, \Fconcat(\Fsplits(s_1), ..., \Fsplits(s_n),
+        \VpreStmt_{\mathcal{J}}),
+        \Fsplitj(j))}
+      \\[1em]
+      \textnormal{User type definition } u & \Fsplitu(u) \\\hline
+       (\sigma, \Void, \CEnum, d_1...d_n)  &
+      [(\sigma, \Void, \CEnum, d_1...d_n)] \\
+       (\sigma, \Void, \CUnion, d_1...d_n)  & 
+      [(\sigma, \Void, \CUnion_s, d_1...d_n)]
+      & \textnormal{if }\Fbt(d_1) = S \\
+       (\sigma, \Void, \CUnion, d_1...d_n)  & 
+      [(\sigma, \Void, \CUnion_d, d_1...d_n)]
+      & \textnormal{if }\Fbt(d_1) = D \\
+       (\sigma, \Void, \CStruct, d_1...d_n) &
+      [(\sigma_s, \Void_s, \CStruct_s, \Vss),
+       (\sigma_d, \Void_d, \CStruct_d, \Vdd)] 
+      & \textnormal{if $u$ splitable} \\ 
+       (\sigma, \Void, \CStruct, d_1...d_n) &
+      [(\sigma, \Void, \CStruct_s, \FsplitArgsd(d_1, ..., d_n))] & 
+      \textnormal{else if } \Fbt(d_1) = S \\ 
+       (\sigma, \Void, \CStruct, d_1...d_n) &
+      [(\sigma, \Void, \CStruct_d, \FsplitArgsd(d_1, ..., d_n))] & 
+      \textnormal{else} \\[1ex]
+      \mc{3}{l}{\textnormal{where } 
+        (\Vss,\Vdd) = \FsplitMems(d_1, ..., d_n)}
+      \\[1em]
+      \textnormal{Program } p & \Fsplitp(p) \\\hline
+      (
+      \begin{array}[t]{@{}l@{}}
+        u_1 ... u_n, d^v_1 ... d^v_m, \\
+        d^f_1 ... d^f_l, d^{ve}_1 ... d^{ve}_k, \\
+        d^{fe}_1 ... d^{fe}_j, b_1 ... b_h)
+      \end{array}
+      & \mc{2}{l}{
+        \begin{array}[t]{@{}l@{}}
+          \Klet\\
+          \quad \Vus := \Fsplitu(u_1) \append \cdots 
+                                      \append \Fsplitu(u_n) \\
+          \quad \Vds^v := \FsplitArgsd(d^v_1, ..., d^v_m) \\
+          \quad \Vds^f := \FsplitArgsd(d^f_1, ..., d^f_m) \\
+          \quad \Vus':= [(\sigma_{\Vms}, \Void_{\sigma_{\Vms}},
+                        \CStruct_s, d_s, d_d) \mid
+            \sigma_{\Vms} \ne \CNull ] \\
+          \Kin\\
+          \quad (\Vus \append \Vus', \Vds^v, \Vds^f, 
+          d^{ve}_1 ... d^{ve}_k, d^{fe}_1 ... d^{fe}_j, 
+                 \Fsplitb(b_1) ...\Fsplitb(b_1))
+        \end{array}}
+      \end{array}
+    \]
+    \caption{Splitting transformation for \coreC statements, control
+      statements,  basic blocks, userdefined types and programs}
+    \label{fig:PDSSplitStatementsBBs}
+  \end{center}
+\end{figure}%
+Function $\Fsplits$_{splits@$\Fsplits$} takes a statement and returns a
+list of statements that perform the same operation, but split into totally
+static_{assignment!totally static} and totally dynamic_{assignment!totally
+  dynamic} operations.
+
+
+\subsection{Implementation level (22.04.1998)}
+\label{sec:PSDImplementationLevel}
+
+The splitting algorithms in this chapter have not been implemented in
+\cmix yet.
+
+\end{docpart}
+
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 

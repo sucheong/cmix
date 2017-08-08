@@ -1,0 +1,136 @@
+## -*- Makefile -*-
+## Authors:  Jens Peter Secher (jpsecher@diku.dk)
+##           Henning Makholm (makholm@diku.dk)
+##           Arne John Glenstrup (panic@diku.dk)
+## Content:  C-Mix system: makefile template for cmix-x.y.z/src/
+##
+## Copyright © 1999. The TOPPS group at DIKU, U of Copenhagen.
+## Redistribution and modification are allowed under certain
+## terms; see the file COPYING.cmix for details.
+
+# You'll need GNU make to build C-Mix/II -- there are simply
+# too many dependencies on its nifty features to wipe out.
+
+#------------------------------------------
+# GOAL RULES
+#------------------------------------------
+
+main_goal all real_all check_all: GNUmakefile varstrings.h cmixconf.h
+	cd analyzer; $(MAKE) all
+	cd cmixshow; $(MAKE) all
+	cd speclib; $(MAKE) all
+
+info:
+	@echo C-Mix does not have any info files
+
+dvi ps:
+	@echo The Makefile cannot yet chain to the doc directories
+	@echo in order to make $@ files.
+
+dist:
+	cd .. ; $(MAKE) srcdist
+
+check:
+	@echo 'The testsuite is distributed as a separate package;'
+	@echo 'install that and make check from the main cmix-2.x.x directory'
+
+$(floodingtargets):
+	cd analyzer && [ ! -f GNUmakefile ] || $(MAKE) $@
+	cd cmixshow && [ ! -f GNUmakefile ] || $(MAKE) $@
+	cd speclib  && [ ! -f GNUmakefile ] || $(MAKE) $@
+	cd bindist  && [ ! -f GNUmakefile ] || $(MAKE) $@
+
+#------------------------------------------
+# INSTALL RULES
+#------------------------------------------
+
+.PHONY: install-analyzer install-speclib install-cmixshow install-shadows
+
+install-analyzer: GNUmakefile varstrings.h cmixconf.h
+	cd analyzer; $(MAKE) cmix$(EXEEXT) LINK_IN_TMP=no
+	test -d $(DESTDIR)$(bindir) || \
+	  mkdir $(DESTDIR)$(bindir)
+	$(INSTALL_PROGRAM) $(STRIPFLAG) analyzer/cmix$(EXEEXT) \
+	  $(DESTDIR)$(bindir)/cmix$(EXEEXT)
+
+install-speclib: GNUmakefile varstrings.h cmixconf.h
+	cd speclib; $(MAKE) libcmix.a
+	test -d $(DESTDIR)$(libdir) || \
+	  mkdir $(DESTDIR)$(libdir)
+	test -d $(DESTDIR)$(includedir) || \
+	  mkdir $(DESTDIR)$(includedir)
+	test -d $(DESTDIR)$(includedir)/cmix || \
+	  mkdir $(DESTDIR)$(includedir)/cmix
+	$(INSTALL_DATA) speclib/libcmix.a \
+	  $(DESTDIR)$(libdir)/libcmix.a
+	$(INSTALL_DATA) $(srcdir)/speclib/speclib.h \
+	  $(DESTDIR)$(includedir)/cmix/speclib.h
+
+install-cmixshow: GNUmakefile varstrings.h cmixconf.h
+	cd cmixshow; $(MAKE) webfront$(EXEEXT)
+	test -d $(DESTDIR)$(bindir) || \
+	  mkdir $(DESTDIR)$(bindir)
+	$(INSTALL_PROGRAM) $(STRIPFLAG) cmixshow/webfront$(EXEEXT) \
+		$(DESTDIR)$(bindir)/cmixshow$(EXEEXT)
+
+install-shadows:
+	test -d $(DESTDIR)$(datadir)		     || \
+	  mkdir $(DESTDIR)$(datadir)     
+	test -d $(DESTDIR)$(datadir)/cmix	     || \
+	  mkdir $(DESTDIR)$(datadir)/cmix
+	test -d $(DESTDIR)$(datadir)/cmix/shadow     || \
+	  mkdir $(DESTDIR)$(datadir)/cmix/shadow
+	test -d $(DESTDIR)$(datadir)/cmix/shadow/sys || \
+	  mkdir $(DESTDIR)$(datadir)/cmix/shadow/sys
+	for f in `cd $(srcdir)/shadow ; echo *.h sys/*.h`; do \
+	  $(INSTALL_DATA) $(srcdir)/shadow/$$f \
+	    $(DESTDIR)$(datadir)/cmix/shadow/$$f || exit 1 ; \
+	done ; exit 0
+
+install: install-speclib install-cmixshow install-shadows install-analyzer
+
+#------------------------------------------
+# CLEANING RULES
+#------------------------------------------
+
+Mostlyclean:
+	$(RM) *~ .#* core conftest* *.stamp shadows/*~ shadows/*/*~
+
+Clean:
+	$(RM) cmixconf.h varstrings.h
+
+Distclean:
+	$(RM) GNUmakefile
+	$(RM) config.status config.cache config.log
+
+Realclean:
+	$(RM) config.in configure
+
+#------------------------------------------
+# RULES FOR MAINTAINING THE MAKEFILE ITSELF
+#------------------------------------------
+
+varstrings.h: GNUmakefile
+	echo '/* This file is generated automatically from GNUmakefile */' \
+		>varstrings.h
+	echo '#define CPP_COMMAND "'$(CPP)'"' >> varstrings.h
+	echo '#define DATADIR "'$(datadir)'"' >> varstrings.h
+
+config.in: configure.in $(top_srcdir)/acconfig.h
+	autoheader --localdir=.. configure.in > config.in
+
+Ajour: GNUmakefile varstrings.h cmixconf.h
+
+cmixconf.h:
+	./config.status
+
+GNUmakefile: GNUmakefile.in config.in config.status
+	CONFIG_FILES=GNUmakefile:../Makefile.top:GNUmakefile.in ./config.status
+
+config.status: configure
+	./config.status --recheck
+
+configure: configure.in
+	autoconf --localdir=..
+
+Depend: GNUmakefile varstrings.h

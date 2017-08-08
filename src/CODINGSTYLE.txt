@@ -1,0 +1,192 @@
+This document describes the coding style we try to adhere to in
+C-Mix source code. [At the moment of this writing large portions
+of the code is older than this agreement, and look different].
+
+COMMENTS
+--------
+
+1. Use // style comments in the analyser.
+   The C source files in speclib and cmixshow of course use /* */ comments.
+
+2. Preferably put comments above the code they describe, ie
+
+ // Traverse all bars and
+ // do something with them.
+ static bool
+ foo(Plist<bar> bars)
+ {
+   // Temporary stack.
+   Plist<bar> temp;
+   // Final result.
+   bool res;
+   // Go through the bars and
+   // delete them.
+   foreach( i, bars, Plist<bar> ) {
+     // Use default destructor.
+     delete *i ;
+   }
+ }
+
+CODING PRINCIPLES
+-----------------
+
+1. Be paranoid and use lots of assert()s.  Use the assert() definition
+   in "auxilary.h" - DO NOT include the standard header <assert.h>
+   which in some cases invokes compiler magic that interferes
+   destructively with debugging.
+
+2. Try to avoid using global variables. Instead, create an
+   'environment' class containing the needed values and pass
+   references to it around between your functions - or insert the
+   functions as methods in the environment class.
+
+3. Do not use the standard template library (STL).
+
+4. Pointers versus references: In general we should try to minimize
+   the need to convert references to pointers - taking the address of
+   a reference can make the logic of the program hard to understand
+   for a reader that is not intimately familiar with C++. The best way
+   to reach this goal is to generally minimize the use of references.
+
+   In general, pointers into complex data structures such as
+   Core C should be kept as pointers and not passed as references.
+   This is because
+     a) we need them as pointers when making lists of Core C
+        thingies
+     b) in some cases an algorithm is best expressed with a
+        pointer variable that moves around in the data structure.
+	This is not possible with references.
+
+   References to e.g integers, or references to pointers
+   are not likely to be a problem when used for genuine
+   pass-by-reference parameters.
+
+   'Environment' classes that replace global variables are
+   always passed by reference. There would be no reason to
+   ever change the value of a pointer to one. The environment
+   reference should be the first parameter to the function.
+
+   Classes with essential overloaded operators like [] are
+   exchanged by reference because there is no equivalent
+   of -> that make it easy to use such operators with pointers,
+   and it can be awkward to have to write
+      (*very_long_function_call(param1,param2))[index]
+
+   In most cases lists and sets should be passed by reference
+   because the most common use of them is in foreach(...)
+   macros where they should appear as lvalues. The exception
+   is when the list or set come from or have to end up in
+   in a list, set, or map - in that case pointers are to
+   be preferred.
+
+   Note that the above guidelines are violated in many interfaces
+   in the current C-Mix - actually there is very little consistency
+   in the interfaces of the current codebase.
+
+FORMATTING GUIDELINES
+---------------------
+
+1. Function PROTOTYPES are written on one line. If necessary, break the
+   parameter list after commas, and indent subsequent lines to line up
+   with the first parameter.
+
+2. In function and method DEFINITIONS, put a linebreak just before the
+   function name (or class name for methods). Do not put any spaces
+   between the function name and the opening parenthesis of the
+   parameter list (and put no spaces on either side of the a ::). Put
+   a line break before the opening brace of the function body.
+
+3. Exceptions to this are inline definitions inside class declarations.
+   Do not break the line before the function name, and put the opening
+   brace immediately after the closing parenthesis of the parameter list.
+   If the body is short enough it can go entirely on the same line as
+   the heading, or entirely on the next line (in which case the opening
+   brace is moved down there, too).
+
+   class bar : public ba {
+     bar(int, int);
+     int baz1(int x) {
+       if ( x != 0 )
+         gurgle(x);
+       assert(x<=100);
+       return 100-x ;
+     }
+     void baz2() { gurgle(2); }
+     int baz3()
+       { gurgle(3); return 42; }
+   };
+
+4. Format constructors like this:
+
+   bar::bar(int some_param, int other_param)
+     : ba(some_param), whif(0), quux(NULL),
+       good(true), bad(false)
+   {
+     // any body actions go here
+   }
+
+   If the body is empty you can simply end the subobject initializer
+   list with '{}'.
+
+5. The standard indentation width is 2 spaces (large parts of the
+   current codebase used 4 spaces but will be corrected as time
+   permits).
+   
+6. Compound statements: put the opening brace on the same line as the
+   controlling construct. Put a line break before the closing brace
+   and unindent so it matches up with the beginning of the controlling
+   construct. If followed by an 'else' (or in a 'do' loop: 'while'),
+   the 'else' goes on the same line as the closing brace.
+
+7. Switch statements: the big compound statement containing all the
+   cases follow normal rules for compound statements. Case labels
+   should line up with the 'switch' keyword and the closing brace of
+   the big compound statements.  As a special exception, compound
+   statements whose only functions is to delimit the lifetime of local
+   values in a case open after the case label, and close after the
+   'break' or 'return' that ends the case.  Always use 'break' or an
+   explicit 'return' after the code for a case, even if it is the last
+   one in the switch. If you really want to fall through the next case
+   label, indicate that with a comment.
+
+   switch (myfoo.tag) {
+   case BUZZ:
+   case BO:
+     do_something();
+     // fall through
+   case HAMM:
+     do_something(more);
+     break;
+   case SLINK:
+     if ( myfoo.isFrozen() ) {
+       // handle it specially
+       do_something(42);
+       break;
+     }
+     // else fall through
+   case POTATO: {
+     int has_cmix = 1 ;
+     celebrate(has_cmix);
+     break; }
+   }
+   
+    
+Developers are encouraged to insert the following in their ".emacs"
+file:
+
+;;;; C and C++ (cc-mode)
+;; Get rid of the old modes:
+(fmakunbound 'c-mode)
+(fmakunbound 'c++-mode)
+(makunbound 'c-style-alist)
+(autoload 'c++-mode "cc-mode" "C++ Editing Mode" t)
+(autoload 'c-mode   "cc-mode" "C Editing Mode" t)
+(defun my-c-mode-common-hook ()
+  (setq indent-tabs-mode nil)               ; only use blanks
+  (setq c-basic-offset 2)                   ; indent 2 blanks
+  (setq fill-column 79)                     ; allow wide lines
+  ; insert personal key bindings here, e.g.
+  (local-set-key "\C-c\C-c" 'compile)
+  (local-set-key "\C-c\C-v" 'next-error)
+  )
+(add-hook 'c-mode-common-hook 'my-c-mode-common-hook)

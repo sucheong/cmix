@@ -1,0 +1,81 @@
+## -*- Makefile -*-
+## Authors:  Jens Peter Secher (jpsecher@diku.dk)
+##           Henning Makholm (makholm@diku.dk)
+##           Arne John Glenstrup (panic@diku.dk)
+## Content:  C-Mix system: Speclib Makefile
+
+## Copyright © 1993-2000. The TOPPS group at DIKU, U of Copenhagen.
+## Redistribution and modification are allowed under certain
+## terms; see the file COPYING.cmix for details.
+
+#------------------------------------------
+# LISTING OF SOURCE FILES
+#------------------------------------------
+
+SOURCES	= rusage.c mem.c memhash.c code.c unparse.c restruct.c \
+          auxilary.c floats.c longdouble.c pending.c
+# vpending.c used to be in this set but is not used with version
+# 2009 of the speclib interface
+# This is the names of the .c source files that make up libcmix.a
+
+OBJ = $(patsubst %.c,%.o,$(SOURCES))
+# OBJ is the names of the corresponding .o files
+
+IFLAGS = -I. -I..
+
+#------------------------------------------
+# VARIOUS RULES
+#------------------------------------------
+
+libcmix.a: $(OBJ)
+	$(AR) rcv libcmix.a $?
+	$(RANLIB) libcmix.a
+
+%.o: %.c
+	$(CC) $(IFLAGS) $(CFLAGS) -o $@ -c $<
+
+#------------------------------------------
+# GOAL RULES
+#------------------------------------------
+
+all main_goal: libcmix.a
+
+info:
+
+dvi:
+
+install: libcmix.a
+	cd ..; $(MAKE) install-speclib
+
+dist:
+	@echo make dist from the main source directory
+
+check:
+
+#------------------------------------------
+# CLEANING RULES
+#------------------------------------------
+
+Mostlyclean:
+	$(RM) core .\#* *~
+
+Clean:
+	$(RM) *.o libcmix.a
+
+Distclean: clean
+	$(RM) GNUmakefile
+
+#------------------------------------------
+# RULES FOR MAINTAINING THE MAKEFILE ITSELF
+#------------------------------------------
+
+recipe=speclib/GNUmakefile:../Makefile.top:speclib/GNUmakefile.in
+
+GNUmakefile: GNUmakefile.in ../config.status
+	cd .. ; if [ -f config.status ] ; \
+	then CONFIG_FILES=$(recipe) ./config.status ; fi
+
+depend:
+	$(MKDEP) -f Dependencies $(IFLAGS) $(CXXFLAGS) $(MKDEPFLAGS) $(SOURCES)
+
+include $(srcdir)/Dependencies

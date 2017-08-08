@@ -1,0 +1,7 @@
+INSTALL.x
+cmix
+configure.in
+exectest.cc
+Makefile.in
+GNUmakefile.in
+configure

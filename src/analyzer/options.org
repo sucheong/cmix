@@ -1,0 +1,255 @@
+/* -*- C++ -*-
+ * Authors:  Jens Peter Secher (jpsecher@diku.dk)
+ *           Arne Glenstrup (panic@diku.dk)
+ *           Henning Makholm (makholm@diku.dk)
+ * Content:  C-Mix system: options processing code
+ *
+ * Copyright © 1998. The TOPPS group at DIKU, U of Copenhagen.
+ * Redistribution and modification are allowed under certain
+ * terms; see the file COPYING.cmix for details.
+ */
+
+#include <cmixconf.h>
+#include <stdlib.h>
+#include <string.h>
+#ifdef HAVE_REGEX_H
+#include <stddef.h> // for redhat machines which otherwise choke on regex.h
+#include <regex.h>  // for OSF alphas with buggy GCC installations
+#endif
+#include <ctype.h>
+#include "options.h"
+#include "directives.h"
+#include "auxilary.h"
+#ifdef USE_GNU_GETOPT
+#include "getopt.h"
+#else
+#include <unistd.h>
+#define getopt_long(a,b,c,d,e) getopt(a,b,c)
+#endif
+
+// only to be set by directives:
+bool lift_long_double = false ;
+bool lift_uchar_as_char = false ;
+
+%OPTION -V --version "show version number and exit" {
+  cout << "C-Mix " << CmixRelease << endl ;
+  exit(0) ;
+}
+
+%OPTION -B --build-version "show compiled-in configutation" {
+  cout << "C-Mix version " << CmixRelease << endl ;
+  cout << "cpp command: `" << CPP << "'" << endl ;
+  cout << "shadow headers in `" << CMIX_SHADOW_DIR << "'" << endl ;
+  exit(0) ;
+}
+
+bool hardcore_mode = true ;
+bool core_mode = false;
+%OPTION -s --corec "show core representation of program" {
+  core_mode = true;
+  hardcore_mode = false;
+}
+%OPTION -S --hardcore "show detailed core representation of program" {
+  core_mode = true;
+}
+
+bool memo_unconditional_mode = false ;
+%OPTION -b --memoize-gotos "try hard to share code within each function (slow!)" {
+  memo_unconditional_mode = true ;
+}
+
+// bool use_assigned_gotos = false ;
+// %OPTION -g --gcc "use GCC extensions to speed up *-gen.c" {
+%OPTION -g "no-op for backwards compatibility" {
+  Diagnostic(WARNING,Position())
+    << "-g option has no effect in this version of C-Mix" ;
+  // use_assigned_gotos = true ;
+}
+
+bool only_preprocess_mode = false ;
+unsigned quiet_mode = 1 ;
+%OPTION -q --quiet --silent "don't display messages except errors and warnings" {
+  quiet_mode = 2;
+}
+%OPTION -v --verbose "display detailed progress messages" {
+  if ( !only_preprocess_mode )
+    quiet_mode = 0;
+}
+%OPTION -E --preprocess "only preprocess input files" {
+  quiet_mode = 2;
+  only_preprocess_mode = true ;
+}
+
+%OPTION -o --basename --output ARG "select base name for output files" {
+  handleBasenameOption($);
+}
+
+%OPTION -e --directive --expression ARG "give a specializer directive" {
+  JamInDirective($,Position("directive on command line"));
+}
+
+%OPTION -D --define ARG "define a preprocessor symbol" {
+  directives.add_cpparg('D',$);
+}
+
+%OPTION -I --include-dir ARG "give search path for include files" {
+  directives.add_cpparg('I',$);
+}
+
+void ParseDebugOpt(const char*);
+%OPTION -d --debug OPTIONAL "enable debugging output (use -d for help)" {
+  ParseDebugOpt($);
+}
+
+%OPTION -h --help "display this help message" {
+  goto display_help ;
+}
+
+%OPTION_SHORT
+
+#ifdef USE_GNU_GETOPT
+static struct option long_list[] = {
+%OPTION_LONG
+};
+#endif
+
+const char *argv0 ;
+void parse_options(int argc, char * const argv[]) {
+    argv0 = argv[0];
+    bool error = false ;
+    if ( argc <= 1 ) {
+	banner(cout);
+	// The copyright for Roskind's grammar requires us to credit him.
+	cout << "Portions Copyright (c) 1989, 1990 James A. Roskind" << endl ;
+        goto display_help ;
+    }
+    int option ;
+    while ( (option=getopt_long(argc,argv,short_list,long_list,NULL)) != -1 )
+      switch(option) {
+          %OPTION_CASES
+      case 1:
+          // used by some incarnations of GNU getopt to signal a non-option
+          handleNonOption(optarg);
+          break ;
+      case ':':
+          // some getopts do not recognise ::
+          if ( optopt == 'd' ) {
+              ParseDebugOpt(NULL);
+              break ;
+          }
+      default:
+      case '?':
+          error = true ;
+          goto display_help ;
+      }
+    while( optind < argc ) {
+        handleNonOption(argv[optind++]);
+    }
+    return ;
+ display_help:
+    cout << "Usage: " << argv0 << " [options] ( file.cmx | file.c )*" << endl
+         << "Options: " << endl <<
+        %OPTION_HELP
+	 << "Report bugs to: cmix-bugreport@diku.dk" << endl ;
+    if ( error )
+        exit(1);
+    else
+        exit(0);
+}
+ 
+%DEBUGSWITCH DumpCoreC dump-corec
+%DEBUGSWITCH DumpPA    dump-pa
+%DEBUGSWITCH DumpBta   dump-bta
+%DEBUGSWITCH DumpUST   dump-redirect
+%DEBUGSWITCH DumpEnd   dump-dataflow
+%DEBUGSWITCH trace_cmx_parser trace-cmx-parser
+%DEBUGSWITCH trace_c_parser   trace-c-parser
+%DEBUGSWITCH core_addresses   core-pointers
+%DEBUGSWITCH less_inlining    less-inlining
+
+DebugStream::DebugStream() : level(0) {}
+%DEBUGSTREAM cpgm 1
+%DEBUGSTREAM corec 5
+%DEBUGSTREAM outcpgm 2
+%DEBUGSTREAM outcore 2
+%DEBUGSTREAM gram 5
+%DEBUGSTREAM init 4
+%DEBUGSTREAM check 5
+%DEBUGSTREAM c2core 7
+%DEBUGSTREAM pa 6
+%DEBUGSTREAM locals 2
+%DEBUGSTREAM cg 3
+%DEBUGSTREAM dataflow 3
+%DEBUGSTREAM bta 4
+%DEBUGSTREAM separate 1
+%DEBUGSTREAM split 2
+%DEBUGSTREAM gegen 1
+%DEBUGSTREAM ygtree 1
+//%DEBUGSTREAM symtbl 2
+
+void ParseDebugOpt(const char *opt) {
+    static const struct {
+        char const* tag ;
+        bool *onoff ;
+        DebugStream *stream ;
+        unsigned maxlevel ;
+    } debug_table[] = {
+        %DEBUG_TABLE ;
+    };
+    const int dtablen = sizeof debug_table / sizeof debug_table[0] ;
+    if ( opt == NULL ) {
+        banner(cout);
+        cout << "List of debug options:" << endl ;
+        for ( int i = 0 ; i < dtablen ; i++ ) {
+            cout << "  -d" << debug_table[i].tag ;
+            if ( debug_table[i].maxlevel > 1 )
+                cout << "[=n]"
+                     << "                    0 <= n <= "
+                    + strlen(debug_table[i].tag)
+                     << debug_table[i].maxlevel ;
+            cout << endl ;
+        }
+        cout << "  -d+ turns all of the above on (DON'T do this!)" << endl ;
+        exit(0) ;
+    }
+    if ( strcmp(opt,"+") == 0 ) {
+        for ( int i = 0 ; i < dtablen ; i++ ) {
+            if ( debug_table[i].onoff )
+                *debug_table[i].onoff = true ;
+            if ( debug_table[i].stream )
+                debug_table[i].stream->level = debug_table[i].maxlevel ;
+        }
+        return ;
+    }
+    for ( int i = 0 ; i < dtablen ; i++ ) {
+        int l = strlen(debug_table[i].tag) ;
+        if ( strncmp(opt,debug_table[i].tag,l) != 0 )
+            continue ;
+        if ( debug_table[i].onoff && opt[l] == '\0' ) {
+            *debug_table[i].onoff = true ;
+            return ;
+        }
+        assert(debug_table[i].stream != 0);
+        if ( opt[l] == '\0' ) {
+            debug_table[i].stream->level = debug_table[i].maxlevel ;
+            return ;
+        }
+        if ( opt[l] == '=' && opt[l+1] && isdigit(opt[l+1]) && !opt[l+2] ) {
+            unsigned level = opt[l+1]-'0' ;
+            if ( level > debug_table[i].maxlevel ) {
+                Diagnostic(WARNING,Position())
+                    << "there is no level " << opt[l+1] << " for -d"
+                    << debug_table[i].tag ;
+                level = debug_table[i].maxlevel ;
+            }
+            debug_table[i].stream->level = level ;
+            return ;
+        }
+    }
+    Diagnostic(ERROR,Position())
+        << "there is no `" << opt << "' debug option" ;
+}
+       
+        
+    
+    

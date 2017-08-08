@@ -1,0 +1,273 @@
+% File: overview.tex
+
+\providecommand{\docpart}{\input{separatehead}}
+\title{Introduction to \cmix, a Partial Evaluator for C}
+\author{Jens Peter Secher}
+\begin{docpart}
+\maketitle
+
+
+\section{Introduction}
+\label{sec:Introduction}
+
+This is part of the main documentation accompanying the \cmix system, the
+other part being the \emph{\cmix user manual}. As the present document is
+intended for implementation maintainance and people who would like to
+experiment with extending \cmix, a fairly good knowledge of partial
+evaluation is assumed. 
+
+\subsection{\cmix Overview}
+
+\cmix consists of two separate parts. The first part analyses the
+subject program and produces another program, a \emph{generating
+  extension}, based on the initial division of the input data. The
+generating extension reads the static data and produces a
+\emph{residual} program. This process utilises the second part of
+\cmix, the specialisation library (speclib, for short), which takes
+care of memory management and memorisation during specialisation.
+
+\subsubsection{Phases}
+\cmix has two internal representations of the subject program and
+produces a new program in yet another language together with an
+annotated program. This is depicted in figure~\ref{fig:phases}. Each
+closed box depicts a transformation/analysis phase --- from the
+subject program to the generating extension. After the subject program
+is transformed into Core C (cf.{ }
+chapter~\vref{sec:TheCoreCLanguage}), both the original C
+representation and the Core C representation of the subject program is
+kept in memory, and the two representations share the annotations made
+by later phases. This enables us to produce an annotated program in
+two flavours: a short one that resembles the original subject program;
+and an elaborate one that shows the representation that the different
+analyses work on.
+
+Each phase can be instructed to produce the annotated subject program
+as it appears after that particular phase.  Such annotated subject
+program is represented in an abstract format (see
+section~\ref{sec:output}). A file in this format can be processed by a
+filter (see section~\ref{sec:filter}) and inspected by a
+\emph{viewer}, \eg a HTML browser.
+
+\begin{figure}[htbp]
+  \begin{center}
+\[
+\entrymodifiers={=<15ex,8ex>[F]}
+\xymatrix{
+  *=<15ex,8ex>[o][F]{pgm\mathtt{.c}} \ar[d] \\
+  {\txt{C Parser}} \ar[r] & {\txt{User\\directived}} \ar[r] & {\txt{Type\\check}}
+   \ar[r] & {\txt{C to \coreC\\translation}} \ar[d] \\
+  {\txt{Binding-time\\analysis}} \ar[d] &
+  {\txt{Truly-locals\\analysis}} \ar[l] & {\txt{Call\\analysis}}
+  \ar[l] & {\txt{Pointer\\analysis}} 
+  \ar[l] \\
+  {\txt{Structure\\seperation}} \ar[r] & {\txt{Sharing\\analysis}}
+  \ar[r] & {\txt{Binding-time\\Sanity\\check}}\ar[r] & {\txt{In-use\\analysis}} \ar[d] \\
+   *{} & *{} & {\txt{Generating-\\extension\\generator}} \ar[d] &
+   {\txt{Topologically\\sort\\structures}}
+  \ar[l] 
+  \save "3,1"."5,4"*+[F--]\frm{}\restore
+  \save "2,1"."5,4"*++[F.]\frm{} \ar"6,1" \restore \\
+  *=<15ex,8ex>[o][F]{pgm\mathtt{.ann}} & *{} & *=<15ex,8ex>[o][F]{pgm\mathtt{-gen.cc}} \\
+  }
+\]
+    \caption{\cmix analyser phases. The phases inside the dashed box
+      manipulate the \coreC representation pf the program.}
+    \label{fig:phases}
+  \end{center}
+\end{figure}
+
+
+\subsection{Capabilities and restrictions}
+\label{sec:CapabilitiesAndRestricitions}
+
+Ideally, \cmix should be able to treat all strictly conforming \ansiC
+programs. At the time of writing, this is not the case, but if the
+subject program basically is well-typed, \cmix should not choke on it.
+In particular, you should not use \verb|union|s to typecast data, only
+to save memory. \cmix have the following characteristics:
+
+\begin{itemize}
+\item Polyvariant specialisation of functions: An unbounded number of
+  specialised instances of a particular function can be generated.
+\item Functions are allowed to contain dynamic actions yet static return value.
+\item Polyvariant specialisation of basic blocks: An unbounded number of
+  instances of a particular basic block can be generated.
+\end{itemize}
+
+\noindent \cmix has the following limitations:
+\begin{itemize}
+\item Static union restriction, cf.\ Constraint~\vref{cns:SLFUnion}
+\item Bit-fields in structs are accepted, but may produce unexpected
+  behaviour
+\item Monovariant binding times of variables
+\item Monovariant function end-configuration
+\item Non-local static side effects under dynamic control are
+  suspended by a very conservative approach.
+\item Programs that use the \texttt{<setjump.h>} or \texttt{<stdarg.h>}
+  headers cannot be specialized: the collide with the basic control-flow
+  assumptions.
+\end{itemize}
+
+
+
+\subsection{Files}
+\label{sec:Files}
+
+The \cmix system consists of three parts: The analyser, the
+specialization library, and the annotation viewer.
+
+\subsubsection{Analyser}
+The analyser is written in C{++} and consists of the files described
+in table~\ref{tab:AnalyserFilesI}. These files are found in
+\textfnam{src/analyzer}.
+
+\begin{table}
+   \begin{center}
+     \begin{tabular}{ll}
+\hline
+Filename                    & Explanation \\ \hline
+\textfnam{ALoc.\{cc,h\}}    & Abstract location sets (sets of declarations)\\
+\textfnam{GNUmakefile.in}   & File for making the \cmix system \\
+\textfnam{Plist.h}          & Abstract data structure for manipulating
+lists of pointers\\
+\textfnam{Pset.h}           & Abstract data structure for manipulating
+sets of pointers \\
+\textfnam{analyses.h}       & Interface file for all analyses\\
+\textfnam{array.\{cc,h\}}    & Abstract data structure \\
+\textfnam{auxilary.\{cc,h\}}  & Small auxiliary functions \\
+\textfnam{bta.\{cc,h\}},textfnam{bt\{vars,solve\}.cc}
+			   & Binding-time analysis (BTA) \\
+\textfnam{btsanity.cc}      & Binding-time sanity checker \\
+\textfnam{c2core.\{cc,h\}}  & Translation from C to \coreC \\
+\textfnam{check.cc}         & Type check of C program \\
+\textfnam{closures.cc}      & Compute sets of ``sure locals'' for each
+     function \\
+\textfnam{cmix.cc}          & Main \cmix function \\
+\textfnam{commonout.\{cc,h\}} & Common declarations for annotation generators \\
+\textfnam{corec.\{cc,h\}}   & Abstract \coreC syntax objects \\
+\textfnam{cpgm.\{cc,h\}}    & Abstract C syntax objects \\
+\textfnam{dataflow.cc}      & In-use analysis (IUA) (dummy at present time) \\
+\textfnam{diagnostic.\{cc,h\}} & Error and warning message engine \\
+\textfnam{direc.\{l,y\}}    & Parser for user directives \\
+\textfnam{directives.\{cc,h\}} & User directives interpreter and repository \\
+\textfnam{fileops.\{cc,h\}} & Basic file operations with error handling \\
+\textfnam{fixiter.\{cc,h\}} & Generic Least-Recently-Fired fixpoint
+iteration \\
+\textfnam{gegen.h}          & Local definitions for the gegen phase \\
+\textfnam{gg-cascades.cc}   & Gegen helper for statically split arrays \\
+\textfnam{gg-code.cc}       & Gegen functions for functions,
+     statements and control flow \\
+\textfnam{gg-decl.cc}       & Generate code to generate residual declarations \\
+\textfnam{gg-expr.cc}       & Generate code for expressions and types \\
+\textfnam{gg-memo.cc}       & Generate memoisation code \\
+\textfnam{gg-struct.cc}     & Handles struct issues at specialization
+     and residual time \\
+\textfnam{gegen.cc}         & Generating-extension generator main function \\
+\textfnam{generator.cc}     & Translating generator directives to \coreC \\
+\textfnam{getopt.\{c,h\}}   & Command-line options parser \\
+\textfnam{lex.l},\textfnam{parser.h}
+\textfnam{gram.\{cc,y\}}     & C parser \\
+\textfnam{init.cc}          & Conversion of initializers to assignments \\
+\textfnam{liststack.h}      & Stack of lists (used by C parser for scopes) \\
+\textfnam{options.org},
+\textfnam{options.perl}     & Automatic command-line options generator \\
+\textfnam{outanno.h}        & Wrapper for all output generators \\
+\textfnam{outcore.cc}       & Core C output generator \\
+\textfnam{outcpgm.cc}       & Core C output generator \\
+\textfnam{out\{pa,bta,misc\}.h} & annotation generators \\
+\textfnam{output.\{cc,h\}}  & Abstract output definitions \\
+\textfnam{pa.\{cc,h\}},\textfnam{paprune.cc}  & Points-to analysis (PA) \\
+\textfnam{release.cc}       & The release number (mirrored from
+    \textfnam{release-stamp} in the top directiry) \\
+\textfnam{renamer.\{cc,h\}} & Name management \\
+\textfnam{separate.cc}      & Structure splitting \\
+\textfnam{share.cc}         & Function-sharability analysis (FSA) \\
+\textfnam{strings.\{cc,h\}} & Common string constants \\
+\textfnam{structsort.cc}    & Topologocal sorting of structures \\
+\textfnam{symboltable.h}    & Generic hash+backet symboltable \\
+\textfnam{syntax\{cc,h\}}   & Intermediate abstract syntax (for the parser) \\
+\textfnam{taboos.\{org,perl\}}  & Reserved names (for gegen) \\
+\textfnam{tags.\{cc,h\}}    & Common tags for C and \coreC \\
+\textfnam{traverse.cc}      & A code template for traversing a \coreC program \\
+\textfnam{varstrings.cc}    & Configured locations of CPP and shadow headers \\
+\textfnam{bindist.cc}       & Generic replacement for \textfnam{bindist.cc}
+     used for binary distributions \\
+\textfnam{ygtree.\{cc,h\}}  & Generic balanced (yellow-green) trees
+(used by lists, sets, etc.) \\
+     \end{tabular}
+     \caption{Analyser source files}
+     \label{tab:AnalyserFilesI}
+   \end{center}
+ \end{table}%
+
+\subsubsection{Specialisation library}
+The specialisation library is written in C and consists of the files
+described in table~\ref{tab:SpeclibFiles}. These files are found in
+\textfnam{src/speclib}.
+
+\begin{table}[htb]
+   \begin{center}
+     \begin{tabular}{ll}
+\hline
+Filename                 & Explanation \\ \hline
+\textfnam{aux.c}         & Auxiliary functions \\
+\textfnam{cmix.h}        & General header file \\
+\textfnam{code.h}        & Intermediate format for residual code \\
+\textfnam{code.c}        & Collect residual code as it is generated \\
+\textfnam{floats.c}      & Lift and print floating values \\
+\textfnam{mem.c}         & Memory management \\
+\textfnam{pending.c}     & Management of the pending list \\
+\textfnam{rusage.c}, \\
+\textfnam{rusage.h}      & Resource usage statistics \\
+\textfnam{unparse.c}     & Printing of a residual program \\
+\hline
+     \end{tabular}
+     \caption{Specilisation-library source files}
+     \label{tab:SpeclibFiles}
+   \end{center}
+ \end{table}
+
+
+\subsubsection{Annotation viewer}
+The annotation viewer is written in C and consists of the files
+described in table~\ref{tab:CmixshowFiles}. These files are found in
+\textfnam{src/cmixshow}.
+
+\begin{table}[htb]
+   \begin{center}
+     \begin{tabular}{ll}
+\hline
+Filename                 & Explanation \\ \hline
+\textfnam{GNUmakefile.in}    & Makefile \\
+\textfnam{annocut.c}         & Annotation-class selection dialog \\
+\textfnam{annofront.h}       & General data structures and function
+                                 prototypes \\
+\textfnam{annohash.c}        & Primitives for the output tree data
+                                structures \\
+\textfnam{annolink.c}        & Outputting annotated programs as HTML \\
+\textfnam{annomisc.c}        & Auxiliary functions \\
+\textfnam{annotext.c}        & Outputting annotated programs as text \\
+\textfnam{frames.c}          & Dispatcher for the on-line framed browser \\
+\textfnam{http.\{c,h\}}      & Generic HTTP protocol stuff \\
+\textfnam{latch.\{c,h\}}     & Buffer for storing long lines of output \\
+\textfnam{main.c}            & Main program, option parser, etc. \\
+\textfnam{outgram.y},
+\textfnam{outlex.l}          & Abstract output-format parser \\
+\textfnam{server.\{c,h\}}    & Generic server loop \\
+%\textfnam{service.c}         & Not distributed \\ 
+\textfnam{webfront.c}        & Fork browser client, start server \\
+\hline
+     \end{tabular}
+     \caption{Annotation viewer source files}
+     \label{tab:CmixshowFiles}
+   \end{center}
+ \end{table}
+
+\end{docpart}
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End:
+
+
+

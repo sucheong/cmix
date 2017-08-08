@@ -1,0 +1,150 @@
+AC_REVISION([$Id: configure.in,v 1.17 2000/08/14 13:55:56 makholm Exp $])
+dnl Authors:  Jens Peter Secher (jpsecher@diku.dk)
+dnl           Arne Glenstrup (panic@diku.dk)
+dnl           Henning Makholm (makholm@diku.dk)
+dnl Content:  C-Mix system: source code for `configure' script
+dnl
+dnl Copyright © 1998. The TOPPS group at DIKU, U of Copenhagen.
+dnl Redistribution and modification are allowed under certain
+dnl terms; see the file COPYING.cmix for details.
+
+dnl Process this file with autoconf to produce a configure script.
+
+dnl gcc 2.8.1 has bugs that make optimization unreliable
+dnl .. and we do NOT want to throw options at the user when he has
+dnl not asked for it, anyway.
+: ${CXXFLAGS=} ${CFLAGS=}
+
+AC_INIT(Here-are-CMixII-sources)
+AC_CONFIG_HEADER(cmixconf.h:config.in)
+
+CMIXSHOW_LIBS= ; AC_SUBST(CMIXSHOW_LIBS)
+
+AC_ARG_ENABLE(long-double,
+  [  --disable-long-double   avoids long double in speclib interface],,
+  enable_long_double=yes)
+AC_ARG_ENABLE(tmp-link,
+  [  --enable-tmp-link       links cmix in /tmp],
+   LINK_IN_TMP=$enableval, LINK_IN_TMP=no)
+AC_ARG_ENABLE(implicit-templates,
+  [  --enable-implicit-templates       compiles WITHOUT -fno-implicit-templates],,
+  enable_implicit_templates=auto)
+AC_SUBST(LINK_IN_TMP)
+
+dnl Checks for programs.
+AC_PROG_LEX
+AC_PROG_YACC
+AC_PROG_CC
+AC_PROG_CXX
+AC_PROG_RANLIB
+AC_PROG_MAKE_SET
+AC_PROG_INSTALL
+AC_CHECK_PROGS(AR,ar gar,there-is-no-ar-here)
+AC_PATH_PROG(MKDEP,mkdep,../mkdep)
+AC_PATH_PROG(PERL,perl,there-doesnt-seem-to-be-any-perl-here)
+DIKU_PATH_STDCPP
+
+AC_ARG_ENABLE(developer,
+  [  --enable-developer      compiles with warnings and debug info],
+  [if test $enableval = yes
+   then
+     if test x$GXX = xyes
+       then develextra='-Wall -g'
+       else develextra='-g'
+     fi
+     CFLAGS="$CFLAGS $develextra"
+     CXXFLAGS="$CXXFLAGS $develextra"
+     AC_DEFINE(OVERLOAD_NEW_DELETE)
+   fi])
+
+if test $CXX = aCC
+then
+  CXXFLAGS="$CXXFLAGS +W652"
+fi
+
+NOIMPLICIT=
+INSTANTIATION=
+if test x$enable_implicit_templates = xauto
+then
+    enable_implicit_templates=yes
+    if test x$GXX = xyes
+    then
+        if $CXX -v 2>&1 | grep -q 'version egcs'
+        then
+            : use implicit templates for egcs
+	else
+            enable_implicit_templates=no
+        fi
+    fi
+fi
+if test x$enable_implicit_templates = xno
+then
+    NOIMPLICIT=-fno-implicit-templates
+    INSTANTIATION=inst-gcc.org
+fi
+AC_SUBST(NOIMPLICIT) 
+AC_SUBST(INSTANTIATION)
+
+GETOPT_SOURCE=
+AC_ARG_WITH(gnu-getopt,
+  [  --without-gnu-getopt    turns off the use of GNU getopt],
+   GNU_GETOPT=$withval, GNU_GETOPT=yes)
+if test x$GNU_GETOPT = xyes
+then
+  GETOPT_SOURCE='getopt.c getopt1.c'
+  AC_DEFINE(USE_GNU_GETOPT)
+fi
+AC_SUBST(GETOPT_SOURCE)
+
+AC_CHECK_HEADERS(regex.h)
+
+AC_LANG_C
+
+DIKU_STDSYMS
+
+NOSERVER=no
+AC_CHECK_HEADERS(sys/socket.h netinet/in.h,, NOSERVER=yes)
+AC_SUBST(NOSERVER)
+
+dnl Checks for typedefs, structures, and compiler characteristics.
+dnl AC_STRUCT_TM
+AC_CHECK_SIZEOF(int,2)
+
+dnl Checks for library functions.
+AC_CHECK_FUNC(socket,:,AC_CHECK_LIB(socket,socket,
+			CMIXSHOW_LIBS="$CMIXSHOW_LIBS -lsocket",
+			AC_MSG_WARN(cannot find socket library)))
+DIKU_FUNC_GETHOSTNAME
+DIKU_FUNC_ISNAN
+DIKU_VAR_END
+AC_EXEEXT
+AC_CHECK_FUNCS(ltoa)
+
+AC_FUNC_ALLOCA
+dnl AC_FUNC_MEMCMP
+dnl AC_FUNC_VPRINTF
+dnl AC_CHECK_FUNCS(strdup strtod strtol strtoul)
+
+dnl where are we? (for the binary distribution)
+AC_CANONICAL_HOST
+
+AC_SYS_LONG_FILE_NAMES
+HAVE_LONG_FILE_NAMES=$ac_cv_sys_long_file_names
+AC_SUBST(HAVE_LONG_FILE_NAMES)
+
+if test x$HAVE_LONG_FILE_NAMES = xno
+then
+  root='cmix-$(shortrelease)'
+else
+  root='cmix-$(release)'
+fi
+AC_SUBST(root)
+
+rm -f core
+cmix_oneup=/..
+AC_SUBST(cmix_oneup)
+AC_OUTPUT(GNUmakefile:../Makefile.top:GNUmakefile.in
+          analyzer/GNUmakefile:../Makefile.top:analyzer/GNUmakefile.in
+          speclib/GNUmakefile:../Makefile.top:speclib/GNUmakefile.in
+          cmixshow/GNUmakefile:../Makefile.top:cmixshow/GNUmakefile.in
+	  bindist/GNUmakefile:../Makefile.top:bindist/GNUmakefile.in)

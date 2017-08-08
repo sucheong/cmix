@@ -1,0 +1,139 @@
+## -*- Makefile -*- @configure_input@
+## Authors:  Jens Peter Secher (jpsecher@diku.dk)
+##           Henning Makholm (makholm@diku.dk)
+##           Arne John Glenstrup (panic@diku.dk)
+## Content:  C-Mix system: Local makefile for the bindist creation
+##
+## Copyright © 2000. The TOPPS group at DIKU, U of Copenhagen.
+## Redistribution and modification are allowed under certain
+## terms; see the file COPYING.cmix for details.
+
+#------------------------------------------
+# BINARY DISTRIBUTION CREATION
+#------------------------------------------
+
+configure: configure.in
+	( cd $(srcdir) && autoconf --localdir=../.. configure.in ) > configure
+
+exectest: exectest.cc
+	@CXX@ @CXXFLAGS@ $(LDFLAGS) $< -o $@
+
+sexectest: exectest.cc
+	@CXX@ @CXXFLAGS@ $(STATICLDFLAGS) $< -o $@
+
+release	:= $(shell tr -d ' \n' < $(top_srcdir)/release-stamp)
+shortrelease := $(subst .,,$(release))
+HOST	= @host_cpu@-@host_os@
+SHORTHOST := $(shell echo @host_os@ | sed 's/^\(..\).*$$/\1/')
+root	= @root@
+indep	= $(root)/bindist
+share	= $(indep)/share
+dist	= $(indep)/$(HOST)
+
+dirs	= $(root) $(indep) $(dist) $(dist)/bin $(dist)/lib $(share) \
+	  $(share)/cmix $(share)/cmix/shadow $(share)/cmix/shadow/sys \
+	  $(indep)/include $(indep)/include/cmix
+
+# When the build directory is separate from the source directory it
+# might not be possible to make hardlinks for the files that are
+# not remade. In that case, use cp instead of ln.
+SRCLN := $(shell if $(LN) $(src)/cmix linktest >/dev/null 2>&1 ;\
+		then echo $(LN) ; else echo $(CP) ; fi; $(RM) linktest)
+
+forstat = [ -f no.static ] ||
+
+dist: configure exectest
+	@echo Building binary distribution in $(root)/
+	test ! -d $(root)
+	cd ../cmixshow; $(MAKE) webfront$(EXEEXT)
+	cd ../analyzer; $(MAKE) cmix.bindist
+	( $(MAKE) sexectest && \
+	  ( cd ../cmixshow && $(MAKE) swebfront$(EXEEXT) ) && \
+	  ( cd ../analyzer && $(MAKE) scmix.bindist ) ) || echo > no.static
+	cd ../speclib; $(MAKE) libcmix.a
+	for dir in $(dirs) ; do mkdir $$dir || exit 1 ; done
+	$(STRIP) ../analyzer/cmix.bindist
+	$(forstat) $(STRIP) ../analyzer/scmix.bindist
+	$(STRIP) ../cmixshow/webfront$(EXEEXT)
+	$(forstat) $(STRIP) ../cmixshow/swebfront$(EXEEXT)
+	$(LN) ../analyzer/cmix.bindist $(dist)/lib/cmix$(EXEEXT)
+	$(CHMOD) go=rx $(dist)/lib/cmix$(EXEEXT)
+	$(forstat) $(LN) ../analyzer/scmix.bindist $(dist)/lib/scmix$(EXEEXT)
+	$(forstat) $(CHMOD) go=rx $(dist)/lib/scmix$(EXEEXT)
+	$(LN) ../cmixshow/webfront$(EXEEXT) $(dist)/bin/cmixshow$(EXEEXT)
+	$(CHMOD) go=rx $(dist)/bin/cmixshow$(EXEEXT)
+	$(forstat) $(LN) ../cmixshow/swebfront$(EXEEXT) $(dist)/bin/scmixshow$(EXEEXT)
+	$(forstat) $(CHMOD) go=rx $(dist)/bin/scmixshow$(EXEEXT)
+	-$(STRIP) ../speclib/libcmix.a
+	$(LN) ../speclib/libcmix.a $(dist)/lib/libcmix.a
+	$(CHMOD) go=r $(dist)/lib/libcmix.a
+	$(SRCLN) $(srcdir)/../speclib/speclib.h $(indep)/include/cmix/speclib.h
+	$(CHMOD) go=r $(indep)/include/cmix/speclib.h
+	$(SRCLN) $(srcdir)/../shadow/*.h $(share)/cmix/shadow/
+	$(SRCLN) $(srcdir)/../shadow/sys/*.h $(share)/cmix/shadow/sys/
+	$(CHMOD) -R go=r $(share)/cmix/shadow/
+	$(LN) configure $(dist)/configure || \
+	  $(SRCLN) $(srcdir)/configure $(dist)/configure
+	$(SRCLN) $(top_srcdir)/install-sh $(dist)/install-sh
+	$(SRCLN) $(srcdir)/Makefile.in $(dist)/Makefile.in
+	$(LN) exectest$(EXEEXT) $(dist)/cmixdist.bin
+	$(forstat) $(LN) sexectest$(EXEEXT) $(dist)/scmixdist.bin
+	$(SRCLN) $(srcdir)/cmix $(dist)/bin/cmix
+	$(CHMOD) go=rx $(dist)/bin/cmix
+	$(SED) -e 's/@R/$(release)/; s/@H/$(HOST)/' \
+	   < $(srcdir)/INSTALL.x > $(indep)/INSTALL-$(HOST)
+	$(TAR) cm$(shortrelease)$(SHORTHOST) $(root)
+	$(GZIP) -c cm$(shortrelease)$(SHORTHOST) \
+		> cm$(shortrelease)$(SHORTHOST).tgz
+	$(RM) cm$(shortrelease)$(SHORTHOST)
+	$(RM) -r $(root) no.static
+	$(RM) $(top_srcdir)/cm$(shortrelease)$(SHORTHOST).tgz
+	$(MV) -f cm$(shortrelease)$(SHORTHOST).tgz $(top_srcdir)
+ifeq (x$(HAVE_LONG_FILE_NAMES),xyes)
+	$(RM) $(top_srcdir)/cmix-$(release)-$(HOST).tar.gz 
+	$(LN) $(top_srcdir)/cm$(shortrelease)$(SHORTHOST).tgz \
+		$(top_srcdir)/cmix-$(release)-$(HOST).tar.gz 
+endif
+
+#------------------------------------------
+# MAIN GOALS
+#------------------------------------------
+
+all: configure exectest
+
+main_goal bindist: dist
+
+info:
+
+dvi:
+
+install:
+
+check:
+
+#------------------------------------------
+# CLEANING RULES
+#------------------------------------------
+
+Mostlyclean:
+	$(RM) *~ linktest no.static
+	$(RM) -r cmix-*
+
+Clean:
+	$(RM) exectest sexectest
+
+Toolclean:
+	$(RM) configure
+
+Distclean:
+	$(RM) GNUmakefile
+
+#------------------------------------------
+# RULES FOR MAINTAINING THE MAKEFILE ITSELF
+#------------------------------------------
+
+recipe=bindist/GNUmakefile:../Makefile.top:bindist/GNUmakefile.in
+
+GNUmakefile: GNUmakefile.in ../config.status
+	cd .. ; if [ -f config.status ] ; \
+	then CONFIG_FILES=$(recipe) ./config.status ; fi

@@ -1,0 +1,18 @@
+FILES			This file.
+
+GNUmakefile.in          Template for the makefile
+GNUmakefile             Auto-generated makefile
+Dependencies            Included by the makefile
+
+TIPS                    Pieces of trivia someone has once searched
+                        long enough for to think they deserve to
+                        be written down.
+
+*.org, *.perl           .org files get processed with the accompanying
+                        perl script to produce a .cc source.
+
+*.{cc,h,y,l}            Source files
+                        There should have been a table of which files
+                        do what here, but it had become really horribly
+                        out of date, and I have't enough time to write
+                        a new one yet.

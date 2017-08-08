@@ -1,0 +1,438 @@
+% File: bta.tex
+
+\providecommand{\docpart}{\input{separatehead}}
+\title{Binding-time analysis in \cmix}
+\author{Jens Peter Secher}
+\begin{docpart}
+\maketitle
+
+\begin{center}
+  \fbox{\huge\textsl{THIS SECTION IS OUT-OF-DATE}}    
+\end{center}
+
+\section{Binding-time analysis in \cmix}
+This paper describes the binding-time analysis (BTA) on \coreC in \cmix.
+The analysis is based on the one described in
+\cite{Andersen:1994:ProgramAnalysisAndSpecialization} and extended with
+ideas from \cite{Andersen:1997:PartiallyStaticBTA}. The analysis works on
+annotated types, described in the next section. It consists of two phases:
+constraint generation and constraint solving.  These are described in later
+sections.
+
+\subsection{Types and binding times}
+The purpose of the BTA is to identify which parts of the program that
+can be evaluated at compile time; these are the the \emph{static}
+parts. All other parts must be suspended until the necessary data is
+supplied; these are the \emph{dynamic} parts.  Figure~\ref{fig:btt}
+defines binding times and annotated types.  Intuitively, $\beta +>
+\beta'$ means that $\beta$ is at least as dynamic as $\beta'$.
+
+\begin{figure*}%[htbp]
+\begin{frameit}
+\[\begin{array}{rcll}
+  {\mathcal B} \ni \beta &::=& S & \mbox{Static} \\
+                         & | & D & \mbox{Dynamic}\\
+  \\
+  +> &\subseteq& {\mathcal B} \times {\mathcal B} \\
+  D & +> & D \\
+  D & +> & S \\
+  S & +> & S \\
+  \\
+    \tau_B &::=& \syntax{int}, \syntax{float}, \dots \\
+  \\
+  {\mathcal T} \ni T &::=& \btT{\tau_B}{\beta} & \mbox{Simple} \\
+            & | & \btT{\mbox{struct }S}{\beta} & \mbox{Structure}  \\
+            & | & \btT{\star}{\beta} T  & \mbox{Pointer to }T \\
+            & | & \btT{[n]}{\beta} T  & \mbox{Array}[n]\mbox{ of }T \\
+            & | & \btT{(T_1,...,T_n)}{\beta} T  & \mbox{Function
+                         returning }T \\
+\end{array}\]
+\caption{binding times and types.}
+\label{fig:btt}
+\end{frameit}
+\end{figure*}
+
+\begin{Def}
+  \label{def:wf-bttype}
+  A binding-time type $T =
+  \btT{\tau_1}{\beta_1}...\btT{\tau_n}{\beta_n}$ is \emph{well-formed}
+  iff $\beta_n +> \dots +> \beta_1$ and for any function type $T =
+  \btT{(\btT{\tau_1}{\beta_1},...,\btT{\tau_m}{\beta_m} )}{\beta} T_0$
+  it must be the case that $\beta +> \beta_1 \wedge ... \wedge \beta
+  +> \beta_m$.
+\end{Def}
+
+\noindent
+The relation ${>>=} \subseteq \mathcal{T} \times \mathcal{T}$ is
+defined below. Intuitively, $T >>= T'$ means that type $T$ is at least
+as dynamic as $T'$.
+
+\begin{Def}
+  \label{def:bt-type-order}
+  $T >>= T'$ iff $T = \btT{\tau_1}{\beta_1}...\btT{\tau_n}{\beta_n}$,
+  $T' = \btT{\tau_1}{\beta_1'}...\btT{\tau_n}{\beta_n'}$ and $\beta_1
+  +> \beta_1' \wedge ... \wedge \beta_n +> \beta_n'$. Also, for any
+  pair of function types $T,T'$, we have $T >>= T'$ iff $T =
+  \btT{(T_1,...,T_m)}{\beta}T_0, T' =
+  \btT{(T_1',...,T_m')}{\beta}T_0'$, and $T_0 >>= T_0' \wedge T_1 >>=
+  T_1' \wedge ... \wedge T_m >>= T_m'$.
+\end{Def}
+
+\begin{Def}
+  \label{def:bt-of-type}
+  The binding time of a type is defined thus: $\bt{T}=\beta$ iff $T =
+  \btT{\tau}{\beta} \btT{\tau_1}{\beta_1} ...
+  \btT{\tau_n}{\beta_n}$.
+\end{Def}
+
+\subsection{Constraint generation}
+Constraints are generated to express dependencies between parts of the
+program, \eg the binding time of an expression, which consists of an
+operator and two operands, depends on the binding times of both
+sub-expressions. 
+
+There are three kinds of constraints: $T == T'$ means that the two
+binding-time types must be identical; $T >>= T'$ is defined by
+definition~\ref{def:bt-type-order}; $\beta +> \beta'$ is defined in
+figure~\ref{fig:btt}; The short-hand notation $\bt{T} +> \bt{T'}$
+means that if $\bt{T}=\beta$ and $\bt{T'}=\beta'$ then $\beta +>
+\beta'$. The short-hand notation alldyn($e$) means that every part of
+$e$ must be dynamic.
+
+Initially, the types of the formal parameter declarations of the goal
+function are assigned the initial binding-time division. All other
+types are annotated with fresh binding-time variables. Since the
+translation to \coreC has introduced a unique instance of every
+structure declaration, each instance can have its own binding times.
+Initialisers are static in Core C so they are not accounted for.
+Parameter types of function pointers are made equal to parameters of
+all functions they can point to, and so are the return types. Equality
+constraints are denoted by $==$, which is realy a hort-hand notation
+for two $>>=$ constraints.
+
+\subsection{Expressions}
+\label{sec:BTAExpressions}
+The binding-time constraint generation for expressions is defined in
+figure~\ref{fig:BTAExprConstraintGeneration}. During this phase we
+implicitly assume that constraints are generated such that every type will
+fulfil the well-formed criteria, see definition~\ref{def:wf-bttype}.
+
+\bigskip
+% -------- Expressions ---------
+
+\begin{figure*}%[htbp]
+\begin{frameit}
+\noindent\fbox{Expressions}\hfill\fbox{$e : T,\mathcal{C}$}
+
+\[\inference[const]
+  {}
+  {c : \btT{\tau_B}{\beta},\{\}}
+\qquad
+  \inference[rvar]
+  {}
+  {x : T, \{T == T_x\}}
+\qquad
+  \inference[lval]
+  {\bt{T_x} = \beta_x}
+  {\syntax{\&}x : \btT{\star}{\beta}T, \{T >>= T_x,\beta_x +> \beta\}}
+\]
+
+
+\[
+  \inference[deref]
+  {e : \btT{\star}{\beta} T', \mathcal{C} &
+   \mbox{localglobal}(PT(e),\beta,\bt{T'}) = \mathcal{C}'}
+  {\syntax{*}e : T, \mathcal{C}\mathcal{C}'\{T==T'\}}
+\qquad
+  \inference[addr]
+  {e : T, \mathcal{C} & \bt{T} = \beta}
+  {\syntax{\&}e : \btT{\star}{\beta'}T', \mathcal{C}
+    \{T==T', \beta +> \beta'\}}
+\]
+
+\[\inference[unary]
+  {e : T, \mathcal{C}}
+  {uop\ e : T', \mathcal{C}\{\bt{T'} +> \bt{T}\}}
+\qquad
+  \inference[binary]
+  {e_1 : T_1, \mathcal{C}_1 & e_2 : T_2, \mathcal{C}_2}
+  {e_1\ bop\ e_2 : \btT{\tau}{\beta},
+    \mathcal{C}_1\mathcal{C}_2\{\beta +> \bt{T_1}, \beta +> \bt{T_2}\}}
+\]
+
+\[
+  \inference[struct]
+  {e : T_S, \mathcal{C} & \mbox{refSet}(e.i) = \{ \alst{d} \}}
+  {e.i : T, \mathcal{C}\{T >>= T_{d_1},...,T >>= T_{d_n}\}}
+\qquad
+  \inference[typesize]
+  {}
+  {\syntax{sizeof}(\tau) : \btT{\tau_B}{\beta},\{\beta +> D\}}
+\]
+
+\[
+  \inference[expsize]
+  {}
+  {\syntax{sizeof}(e) : \btT{\tau_B}{\beta},\{\beta +> D, \mbox{alldyn}(e)\}}
+\]
+
+\[\inference[cast]
+  {e : T, \mathcal{C}}
+  {\syntax{(}T'\syntax{)} e : T', \mathcal{C} \cup \mbox{Cast}(T,T')}
+\]
+
+\[\begin{array}{lcl}
+   \mbox{Cast}(\btT{\tau_B}{\beta},\btT{\tau_B'}{\beta'}) 
+   & = & \{ \beta +> \beta' \} \\
+  \mbox{Cast}(\btT{\star}{\beta}T,\btT{\star}{\beta'}T') 
+   & = & \{ \beta=\beta' \} \cup \mbox{Cast}(T,T') \\
+  \mbox{Cast}(\btT{\star}{\beta}T,\btT{[n]}{\beta'}T') 
+   & = & \{ \beta=\beta' \} \cup \mbox{Cast}(T,T') \\
+ \end{array}\]
+ \caption{Constraint generation for expressions.}
+ \label{fig:BTAExprConstraintGeneration}
+\end{frameit}
+\end{figure*}
+
+Notice that if expression $e$ has a binding-time type $T$, then
+$\bt{T}$ tells us the binding time of the \emph{result} of $e$ --- it
+does not tell us when we can expect to evaluate various parts of
+$e$. This information has to be extracted in a later phase,
+see~\vref{sec:PartiallyStaticData}.
+
+\subsection{Statements}
+The binding-time type $T_f$ of a function $f$ has a binding time that
+depends on all calls to $f$: If it is called under dynamic control,
+the binding time is dynamic. The binding time $\alpha_f$ of a function
+$f$ depends on the statements in that function: if it is static, no
+dynamic statements are present in $f$ and thus any call to $f$ can be
+eliminated.
+  
+The return type $T_{f_0}$ of a function $f$ tells us whether the
+return value is static. It is thus possible to have a dynamic
+function with a static return value, provided all return statements
+are static and the control flow is totally static. Consider the
+program
+
+\begin{verbatim}
+  int f(int d)
+  {
+    if (d) return 1; else return 2;
+  }
+\end{verbatim}
+
+\noindent
+where the return values are static, but under dynamic control since
+\verb.d. is dynamic. If the return value of the function were to be
+classified static, the function would have two different return
+values. 
+
+The constraint generation for statements is defined in
+figure~\ref{fig:BTAStmtConstraintGeneration}. We implicitly assume that
+each statement has a surrounding function $f$ with the type $T_f$ and
+return type $T_{f_0}$.
+
+\subsubsection{Non-local side-effects}
+The binding-time analysis has to guarantee that static non-local
+side-effects (NLS-effects) does not occur under dynamic control. To
+ensure this, the BTA makes every NLS-effecting
+statement\footnote{Recall that only statements can do side-effects in
+  Core C.} dependent on the binding time of the preceding basic
+block's control statement. Thus, if a basic block $A$ ends in a
+conditional control statement of the form \syntax{if($e$) goto $B$
+  else goto $C$}, then both blocks $B$ and $C$ will be dependent on
+the expression $e$. To make this dependency transitive, every basic
+block is dependend of all immediate preceding blocks; the first block
+in a function is dependend on each call site's basic block.
+
+Given a function $f$, a statement of the form \syntax{x=$e$} is
+locally side-effecting (and thus harmless) if \syntax{x} is a local
+variable in $f$. The same holds for statements of the form
+\syntax{x.i=$e$}. When assignments are done through pointers, however,
+we cannot rely on syntactical scope anymore: we need to decide whether
+the objects reachable through a particular pointer are truly local
+objects\footnote{A recursive function can have several sets of local
+  variables at run-time, and thus a pointer can refer to a variable in
+  any such set}.
+
+Given the previously described points-to information (see
+Section~\vref{sec:PointerAnalysis}), an approximation of the set of non-local
+variables in a function $f$ can be calculated: the transitive closure
+of the PA-info (denoted $PT^*$) is calculated for all global variables
+and for each function $f$, such that $PT^*(f)$ is $PT^*$ of all formal
+parameters, and $PT^*(\mbox{globals})$ is $PT^*$ of the globals. With
+these sets in hand, a side-effecting statement of the form
+\syntax{*p=$e$} is considered locally side-effecting if no object in
+$PT(\syntax{p})$ is contained in $PT^*(\mbox{globals})$ or $PT^*(f)$.
+We can thus define a function that returns a set of constraints when
+given a declaration, the containing function and the binding-time
+variable of the containing basic block.
+\begin{eqnarray}
+  \label{eqn:nonlocal}
+  \mbox{nonlocal}(d,f,bb)
+  &=& \mbox{if } d \in \mbox{locals}(f) \setminus (PT^*(\mbox{globals}) \cup PT^*(f)) \nonumber \\
+  & & \mbox{then } \{ \} \nonumber  \\
+  & & \mbox{else } \{ \bt{T_d} +> \bt{bb} \} \nonumber 
+\end{eqnarray}
+
+Each function should have a non-local side effect flag to remind the
+generating extension that such a function needs a post-store
+memoization.
+
+\subsection{Static pointers to dynamic data}
+Consider this program were \texttt{d} is dynamic.
+
+\begin{verbatim}
+int y,z;                    void swap(int* a, int *b)
+                            {
+int main(int d)               int tmp = *a;
+{                             *a = *b, *b = tmp;
+  int x = d+1;              }
+  swap(&d,&x); /* 1 */  
+  y = x;                
+  z = d;                
+  swap(&y,&z); /* 2 */  
+  return d;             
+}                       
+\end{verbatim}
+
+\noindent The first call to \texttt{swap} contains static pointers to
+dynamic, non-local, non-global objects --- whereas the second contains
+static pointers to dynamic, global objects. If this was allowed, the
+residual program would wrongly be
+
+\begin{verbatim}
+int y,z;                    void swap_1()
+                            {
+int main(int d)               int tmp = d;     /* out of scope */
+{                             d = x, x = tmp;
+  int x = d+1;              }
+  swap_1();                 
+  y = x;                    void swap_2()
+  z = d;                    {
+  swap_2();                   int tmp = y;
+  return d;                   y = z, z = tmp;
+}                           }
+\end{verbatim}
+
+\noindent The problem is that dynamic, non-local, non-global objects
+get out of scope during the first call. This can also happen with
+global pointers to non-local objects. [So, we need to make constraints
+such that if a dereference of static pointers results in a non-local,
+non-global object, the pointer must be made dynamic.]
+
+\begin{eqnarray}
+  \label{eqn:localglobal}
+  \mbox{localglobal}(\Delta,\beta,\beta_{*}) &=& \mbox{if }
+  \exists\delta \in \Delta \mbox{ s.t. }
+  \delta \not\in (\mbox{globals} \cup \mbox{locals}) \nonumber \\
+  & & \mbox{then } \{ \beta_{*} +> \beta \} \nonumber  \\
+  & & \mbox{else } \{ \} \nonumber
+\end{eqnarray}
+
+\bigskip
+% -------- Statements ---------
+
+\begin{figure*}%[htbp]
+\begin{frameit}
+\noindent\fbox{Statements}\hfill\fbox{$s : \mathcal{C}$}
+
+\[\inference[if]
+  {e : T, \mathcal{C}}
+  {\syntax{if}(e)\ B\ B' : \mathcal{C}\{\bt{T_f} +> \bt{T},
+                            \bt{B} +> \bt{T}, \bt{B'} +> \bt{e}\}}
+\]
+
+\[\inference[return]
+  {e : T, \mathcal{C}}
+  {\syntax{return}\ e : \mathcal{C}\{T_{f_0} >>= T,
+     \bt{T_f} +> \bt{T}\}}
+\qquad
+  \inference[goto]
+  {}
+  {\syntax{goto}\ B : \{\}}
+\]
+
+\[\inference[assign]
+  {e : T, \mathcal{C} & \mbox{nonlocal}(x,f,bb)=\mathcal{C}_x}
+  {x\syntax{=}e : \mathcal{C}\mathcal{C}_x\{T_x >>= T, \bt{T_f} +> \bt{T}\}}
+\]
+
+\[\inference[passign]
+  {e : T, \mathcal{C} & PT(x) = \{ \alst{d} \} & \mbox{nonlocal}(d_i,f,bb)=\mathcal{C}_i}
+  {\syntax{*}x\syntax{=}e : \mathcal{C}\mathcal{C}_1 \cdots \mathcal{C}_n
+    \{T_{d_1} >>= T,...T_{d_n} >>= T, \bt{T_f} +> \bt{T}\}}
+\]
+
+\[\inference[strassign]
+  {e : T, \mathcal{C} & \mbox{nonlocal}(x,f,bb)=\mathcal{C}_x}
+  {x\syntax{.}i\syntax{=}e : \mathcal{C}\mathcal{C}_x
+    \{T_{x.i} >>= T, \bt{T_f} +> \bt{T}\}}
+\]
+
+\[\inference[pstrassign]
+  {e : T, \mathcal{C} & PT(x) = \{ \alst{d} \}& \mbox{nonlocal}(d_i,f,bb)=\mathcal{C}_i}
+  {\syntax{(*}x\syntax{).}i\syntax{=}e : \mathcal{C}\mathcal{C}_1 \cdots \mathcal{C}_n
+    \{T_{d_1.i} >>= T,...T_{d_n.i} >>= T, \bt{T_f} +> \bt{T}\}}
+\]
+
+\[\inference[call]
+  {e_i : T_i , \mathcal{C}_i &
+    T_g = \btT{(T_1'\cdots T_n')}{\beta}T_0 & \mbox{nonlocal}(x,f,bb)=\mathcal{C}_x}
+  {x\syntax{=}g(e_1,\dots,e_n) : \mathcal{C}_1 \cdots \mathcal{C}_n \mathcal{C}_x
+    \{T_x >>= T_0, T_i' >>= T_i, 
+      \bt{T_f} +> \bt{T_i}\}}
+\]
+
+\[\inference[pcall]
+  {e_i : T_i , \mathcal{C}_i & PT(f\!p) = \{\alst[m]{d}\} &
+   T_{f\!p} = \btT{\star}{\beta_{f\!p}}\btT{(T_1'\cdots
+   T_n')}{\beta}T_0
+   & \mbox{nonlocal}(x,f,bb)=\mathcal{C}_x}
+  {x\syntax{=}f\!p(e_1,\dots,e_n) : \mathcal{C}_0 \cdots \mathcal{C}_n
+    \mathcal{C}_x
+    \{T_{d_j} == T_{f\!p}, T_x >>= T_0, T_i' >>= T_i, 
+      \bt{T_f} +> \bt{T_i}\}}
+\]
+
+\[\inference[free]
+  {e : \btT{\star}{\beta}T, \mathcal{C}}
+  {\syntax{free}(e) : \mathcal{C}\{\bt{T_f} +> D, \beta +> D\}}
+\]
+
+\[\inference[calloc]
+  {e : T_e, \mathcal{C} & T_x = \btT{\star}{\beta}T'
+    & \mbox{nonlocal}(x,f,bb)=\mathcal{C}_x}
+  {x\syntax{=calloc}(e,T,d) : \mathcal{C}\mathcal{C}_x
+    \{ T==T',  T==T_d, \bt{T_f} +> \beta, \beta +> \bt{T_e} \}}
+\]
+ \caption{Constraint generation for statements.}
+ \label{fig:BTAStmtConstraintGeneration}
+\end{frameit}
+\end{figure*}
+
+\subsection{Assigning binding times}
+Binding times can be induced directly from the types.
+
+[Work-lists in \cite{KanamoriWeise:1994:WorklistManagement}]
+
+[Each declaration $d$ that has pointer type: Make all the types of
+objects $\in PT(d)$ depend on each other.]
+
+
+\begin{tabular}{|c|c|c|l|}  \hline
+  Allocation & Contents & Freed & Action \\ \hline
+  S          & S        & +     & Ignore free \\
+  S          & S        & -     & OK \\
+  S          & D        & +     & $->$ DD \\
+  S          & D        & -     & OK \\
+  D          & D        & +/-   & Residualize \\ \hline
+\end{tabular}
+
+\end{docpart}
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% hst: "Herrens Allermest Ultimative Naade"
+%%% End: 
+

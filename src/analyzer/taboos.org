@@ -1,0 +1,76 @@
+% Authors:  Jens Peter Secher (jpsecher@diku.dk)
+%           Arne Glenstrup (panic@diku.dk)
+%           Henning Makholm (makholm@diku.dk)
+% Content:  C-Mix system: Source file with general taboo words
+
+% Taboo words are words the namespace manager must not use as
+% identifiers, independently of the specalized program
+
+----------- PresTaboos ------------
+
+% C reserved words (from the Standard, section 6.1.1)
+auto		double		int		struct
+break		else		long		switch
+case		enum 		register	typedef
+char		extern		return		union
+const		float		short		unsigned
+continue	for		signed		void
+default		goto		sizeof		volatile
+do		if		static		while
+% it is bad for the main function to appear if not
+% explicitly asked for
+main
+
+----------- PgenTaboos -------------
+
+% C reserved words (from the Standard, section 6.1.1)
+auto		double		int		struct
+break		else		long		switch
+case		enum 		register	typedef
+char		extern		return		union
+const		float		short		unsigned
+continue	for		signed		void
+default		goto		sizeof		volatile
+do		if		static		while
+
+% Words defined in the speclib header
+% these days most of these words begin with 'cmix' - which is
+% avoided specifically in the pgen_cooker() function in renamer.cc
+Code FLOATLIFTER externC
+
+% words defined by stdio.h - included from speclib header
+size_t FILE fpos_t NULL
+_IOFBF _IOLBF _IONBF BUFSIZ EOF FOPEN_MAX FILENAME_MAX L_tmpnam
+SEEK_CUR SEEK_END SEEK_SET TMP_MAX stderr stdin stdout
+remove rename tmpfile tmpnam
+fclose fflush fopen freopen setbuf setvbuf
+fprintf fscanf printf scanf sprintf sscanf
+vfprintf vfscanf vprintf vscanf vsprintf vsscanf
+fgetc fgets fputc fputs getc getchar gets putc putchar puts ungetc
+fread fwrite
+fgetpos fseek fsetpos ftell rewind
+clearerr feof ferror perror
+
+% words defined by stdlib.h - included from speclib header
+size_t wchar_t div_t ldiv_t
+NULL
+EXIT_FAILURE EXIT_SUCCESS MB_CUR_MAX RAND_MAX
+atof atoi atol strtod strtol strtoul
+rand srand
+calloc free malloc realloc
+abort atexot exit getenv system
+bsearch qsort
+abs div labs ldiv
+mblen mbtowc wctomb
+mbstowcs wcstombs
+
+% words defined by string.h - included from speclib header
+size_t NULL
+memcpy memmove strcpy strncpy
+strcat strncat
+memcmp strcmp strcoll strncmp strxfrm
+memchr strchr strcspn strpbrk strrchr strspn strstr strtok
+memset strerror strlen
+
+% The main() function must not appear if it is not THE main function
+main

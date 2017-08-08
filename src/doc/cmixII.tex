@@ -1,0 +1,74 @@
+\documentclass[twoside]{cmixdoc}
+\makeindex
+
+\includeonly{%
+tables,%        Table of contents, etc
+overview,%      Overall view of C-Mix/II
+parser,%        Parse the original program(s).
+typecheck,%     Type check of original program
+corec,%         Definition of the Core C language
+c2core,%        Translating from C to Core C
+callmode,
+pa,%            Pointer analysis
+calls,%         Function-call analysis
+locals,%        Truly-local-variables analysis
+dataflow,%      In-use, Read-only analysis
+bta,%           Binding time analysis
+init,%          Initializer movement
+strctsep,%      Structure separation.
+sharing,%       Function-sharing analysis
+sanity,%        Binding-time sanity check
+partstat,%      Partially static structure splitting
+structsort,%    Topological sorting of structure declarations
+gegen,%         Generating the generating extension
+speclib,%       Specialization library functions
+output,%        Description of the intermediate annotation output data
+infra,%         Boring infrastructure details
+end,%           Bibliography, index, etc
+endincludeonly}
+
+\title{\cmix documentation}
+\author{Arne John Glenstrup \and Henning Makholm \and Jens Peter Secher}
+\begin{document}\shortindexingon
+
+\include{tables}
+
+%% Each remaining part of the documentation can be used
+%% separately. The next three lines makes sure that the can interact
+%% with the full document.
+\newenvironment{docpart}{\let\maketitle\relax}{}
+\def\title#1{}
+\def\author#1{}
+
+\include{overview}
+\include{parser}
+\include{typecheck}
+\include{corec}
+\include{c2core}
+\include{callmode}
+\include{pa}
+\include{calls}
+\include{locals}
+\include{dataflow}
+\include{bta}
+\include{sanity}
+\include{init}
+\include{strctsep}
+\include{sharing}
+\include{partstat}
+\include{structsort}
+\include{gegen}
+\include{speclib}
+\include{output}
+
+\appendix
+
+\include{infra}
+\include{end}
+
+\end{document}
+
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: t
+%%% End: 

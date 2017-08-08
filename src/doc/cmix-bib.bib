@@ -1,0 +1,245 @@
+% references.bib
+
+%%%%%%% Remarks %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Places of publishers are included in the PUBLISHER field, not in the
+% 	ADDRESS field. See also the abbreviations.
+% `To appear' in NOTE field. 
+% See EBNOTE for comments (such as missing fields).
+% Problematic keys start with xxxx.
+% Cross-referenced entries have | as first key character.
+
+
+%%%%%% Abbreviations %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+@STRING{AJM		= {American Journal of Mathematics}}
+@STRING{AHC		= {Annals of the History of Computing}}
+@STRING{AML		= {Archiv f\"ur mathematische Logik und Grundlagenforschung}}
+@STRING{ANN		= {Annals of Mathemtaics}}
+@STRING{AAML		= {Archive for Mathematical Logic}}
+@STRING{AMS		= {American Mathematical Society, Providence}}
+@STRING{CPS		= {Proceedings of the Cambridge Mathematical Society}}
+@STRING{CompMath 	= {Compositio Mathematica}}
+@STRING{Duke	 	= {Duke Mathematical Journal}}
+@STRING{FundInf 	= {Fundamenta Informaticae}}
+@STRING{FM      	= {Fundamenta Mathematicae}}
+@STRING{InfComp		= {Information and Computation}}
+@STRING{IM		= {Indagitiones Mathematica}}
+@STRING{IPL		= {Information Processing Letters}}
+@STRING{JACM		= {Journal of the Association for Computing Machinery}}
+@STRING{JCTA		= {Journal of Combinatorial Theory, Series (A)}}
+@STRING{JCTB		= {Journal of Combinatorial Theory, Series (B)}}
+@STRING{JFP		= {Journal of Functional Programming}}
+@STRING{JIC		= {Journal of Information and Computation}}
+@STRING{JLP		= {Journal of Logic Programming}}
+@STRING{JSL		= {Journal of Symbolic Logic}}
+@STRING{JSC		= {Journal of Symbolic Computation}}
+@STRING{NDJFL		= {Notre Dame Journal of Formal Logic}}
+@STRING{LMS		= {Proceedings of the London Mathematical Society}}
+@STRING{NorthHolland	= {North-Holland, Amsterdam}}
+@STRING{MJ		= {Mathematica Japonica}}
+@STRING{TCS		= {Theoretical Computer Science}}
+@STRING{TAMS  	        = {Transactions of the American Mathematical Society}}
+@STRING{MathAnn		= {Mathematische Annalen}}%%%check
+@STRING{LNCS		= {Lecture Notes in Computer Science}}
+@STRING{LNM		= {Lecture Notes in Mathematics}}
+@STRING{ZML       	= {Zeitschrift f\"ur Mathematische Logik und Grundlagen der Mathematik}}%%%check
+
+@STRING{DIKU		= {Department of Computer Science, University of Copenhagen (DIKU)}}
+@STRING{KUN		= {University of Nijmegen}}
+@STRING{TUE		= {Eindhoven University of Technology}}
+@STRING{UU		= {Utrecht University}}
+@STRING{CSI		= {Computing Science Institute, University of Nijmegen}}
+@STRING{CWI		= {Centre for Mathematics and Computer Science (CWI), Amsterdam}}
+@STRING{UUlogic		= {Logic Group, Utrecht Research Institute for Philosophy, Utrecht University}}
+
+@STRING{CUP		= {Cambridge University Press}}
+@STRING{IEEE		= {IEEE Computer Society Press}}
+@STRING{OUP		= {Oxford University Press}}
+@STRING{Princeton	= {Princeton University Press}}
+@STRING{Springer	= {Springer-Verlag}}
+@STRING{FSF             = {Free Software Foundation}}
+
+%%%%%% Bibliography %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+		  
+
+@BOOK{AhoSethiUllman:1986:Compilers,
+    AUTHOR = "Alfred V. Aho and Ravi Sethi and Jeffrey D. Ullman",
+    TITLE = "{Compilers, Principles, Techniques, and Tools}",
+    PUBLISHER = "Addison-Wesley",
+    YEAR = 1986,
+    ANNOTE = "
+        Mentions (mostly) viable prefix property.
+        Earlier dragon book is more clear on this.
+        Also mentioned in Graham-Rhodes paper.
+        "
+    }
+
+@mastersthesis{Andersen:1992:CProgramSpecialization,
+  author =	"Lars Ole Andersen",
+  title =	"{C} Program Specialization",
+  school =	DIKU,
+  year =	"1992"
+}
+		  
+		  
+@PhdThesis{Andersen:1994:ProgramAnalysisAndSpecialization,
+  author = 	 "Lars Ole Andersen",
+  title = 	 "Program Analysis and Specialization for the {C} Programming
+		  Language",
+  school = 	 DIKU,
+  year = 	 1994,
+  address =	 "Copenhagen, Denmark",
+  month =	 may
+}
+
+@unpublished{Andersen:1997:PartiallyStaticBTA,
+   Title      = "Partially Static Binding-Time Types in {C-Mix}",
+   Author     = "Peter Holst Andersen",
+   Note       = "Personal communication",
+   Year       = 1997,
+   Month      = nov
+}
+
+@TechReport{Andersen:1997:StaticMemoryManagementInCMix,
+  author = 	 {Peter Holst Andersen},
+  title = 	 {Static Memory Management in {C-Mix}},
+  institution =  DIKU,
+  year = 	 1997,
+  month =	 sep
+}
+
+@Manual{ANSI:1990:ANSIC,
+  author =	 "ANSI",
+  title = 	 "American National Standard for Programming
+    Languages --- {C}",
+  institution =  "American National Standards
+  Institute",
+  year = 	 1990,
+  address =	 "New York, USA",
+  note =	 "ANSI/ISO 9899-1990"
+}
+
+@inproceedings{Bulyonkov:1996:PracticalAspects,
+  author =	"Mikhail A. Bulyonkov and Dmitrij V. Kochetov",
+  title =	"Practical Aspects of Specilization of 
+                 Algol-like Programs",
+  booktitle =   "Dagstuhl Seminar, Partial Evaluation",
+  month =	"February",
+  year =	"1996",
+  address =	"Germany",
+  pages =	"20--38"
+}
+
+@Book{Cormen:1994:IntroductionToAlgorithms,
+  author =	 {Thomas H. Cormen and Charles E. Leiserson and Ronald L. Rivest},
+  title = 	 {Introduction to Algorithms},
+  publisher = 	 {MIT Press},
+  year = 	 1994,
+  series =	 {MIT Electrical Engineering and Computer Science Series},
+  address =	 {Cambridge, Massachusetts}
+}
+
+@Article{Ershov:1977:PartialEvaluationPrinciple,
+title={On the partial computation principle},
+author={A. P. Ershov},
+pages={38--41},
+journal=ipl,
+year=1977,
+month=apr,
+volume=6,
+number=2
+}
+
+@InProceedings{Henglein:1991:EfficientTypeInference,
+  semno =        "D-88",
+  author =       "Fritz Henglein",
+  title =        "Efficient Type Inference for Higher-Order Binding-Time
+                 Analysis",
+  booktitle =    "FPCA",
+  year =         "1991",
+  editor =       "J. Hughes",
+  pages =        "448--472",
+  organization = "5th ACM Conference, Cambridge, MA, USA",
+  publisher =    Springer,
+  OPTaddress =   "",
+  month =        Aug,
+  note =         "Lecture Notes in Computer Science, Vol. 523",
+  summary =      "A characterization of type inference for binding-time
+                 analysis in the untyped $\lambda$-calculus is given in
+                 terms of type constraint systems. Principal solutions
+                 of such systems are shown to exist. These solutions can
+                 be computed in almost-linear time.",
+  keywords =     "type inference, binding-time analysis, computational
+                 complexity",
+}
+
+@TECHREPORT{KanamoriWeise:1994:WorklistManagement
+, AUTHOR      = {Kanamori, Atsushi and Weise, Daniel}
+, TITLE       = {Worklist Management Strategies for Dataflow Analysis}
+, YEAR        = 1994
+, TYPE        = {Technical Report}
+, INSTITUTION = {Microsoft Research, Advanced Technology Division}
+, NUMBER      = {MSR-TR-94-12}
+}
+
+@Book{Kernighan:1988:CProgrammingLanguage,
+  author = 	 {Kernighan, Brian W. and Ritchie, Dennis M.},
+  title = 	 {The {C} Programming Language},
+  publisher = 	 {Prentice-Hall},
+  year = 	 1988,
+  address =	 {Englewood Cliffs, New Jersey 07632},
+  edition =	 2
+}
+
+@Manual{Roskind:1996:CGrammar,
+  title = 	 "LALR(1) Grammar for {C}",
+  author = 	 "Roskind, Jim",
+  year = 	 1996,
+  note = 	 "\URL{http://www.empathy.com/pccts/roskind.html}"
+}
+
+@Manual{STL,
+  title 	= "the Standard Template Library",
+  author 	= "Stephanov, Alexander and Lee, Meng",
+  note  	= "\URL{http://www.cs.rpi.edu/projects/STL/htdocs/stl.html} or
+  \URL{http://www.cs.rpi.edu/~musser/doc.ps}",
+  year = 1995
+}
+		  
+@BOOK{Jones:93:PartialEvaluation,
+  semno         =   "D-135",
+  author        =   "Neil D. Jones and Carsten K. Gomard and Peter Sestoft",
+  title         =   "Partial Evaluation and Automatic Program Generation",
+  publisher     =   "Prentice-Hall",
+  year          =   "1993",
+  keywords      =   "Partial Evaluation, Binding Time Analysis, Automatic
+                     Program Transformation and Generation, Compiler
+                     Generation, Self-Application",
+  summary       =   "This book provides a broad coverage of basic and
+                     advanced topics in partial evaluation. A wide
+                     spectrum of languages are treated including
+                     imperative, functional (first-order, higher-order),
+                     and logic programming languages. ",
+  OPTsupersedes =   ""
+}
+
+@BOOKLET{dejagnu,
+  title         = "The DejaGnu Testing Framework",
+  author        = "Rob Savoye",
+  howpublisher  = FSF,
+  year          = 1996,
+  month         = jan
+}
+
+@PHDTHESIS{cifuentes:rev-comp-tech,
+  author        = "Cristina Cifuentes",
+  title         = "Reverse Compilation Techniques",
+  dvi           = "ftp://ftp.csee.uq.edu.au/pub/CSM/dcc/decompilation_thesis.dvi.gz",
+  ps            = "ftp://ftp.csee.uq.edu.au/pub/CSM/dcc/decompilation_thesis.ps.gz",
+  school        = "Queensland University of Technology",
+  year          = 1994,
+  month         = jul,
+}
+

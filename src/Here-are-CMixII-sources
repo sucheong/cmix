@@ -1,0 +1,2 @@
+$Id: Here-are-CMixII-sources,v 1.1.1.1 1999/02/22 13:49:33 makholm Exp $
+configure looks for this file to verify having been started in the right place

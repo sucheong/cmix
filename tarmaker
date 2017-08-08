@@ -1,0 +1,149 @@
+#! /bin/sh
+# $Id: tarmaker,v 1.2 1999/06/11 09:14:35 makholm Exp $
+# Authors:  Jens Peter Secher (jpsecher@diku.dk)
+#           Arne Glenstrup (panic@diku.dk)
+#           Henning Makholm (makholm@diku.dk)
+# Content:  C-Mix system: tarfile generator
+#
+# Copyright © 1998. The TOPPS group at DIKU, U of Copenhagen.
+# Redistribution and modification are allowed under certain
+# terms; see the file COPYING.cmix for details.
+
+# This script creates a tarfile of the important files in one or
+# more directories. Its most prominent duty is to decide which
+# files are to be considered important.
+#
+# If the directory has a subdirectory named CVS, it is considered
+# a CVS client directory. In that case the important files are
+# - the files that are managed via CVS,
+# - *except* those listed in a local file called 'tar-ignore'
+#   If a local 'tar-ignore' is not found but a 'tar-ignore-global'
+#   is found in the directory where the script started, that is
+#   used instead.
+# - *plus* those listed in a local file called 'tar-additional'
+#   (which the script tries to 'make' before tar'ing them).
+#
+# If the directory is not a CVS client directory but a file called
+# 'tar-contents' exists, that file lists the important files.
+#
+# If neither CVS/ nor tar-contents exists, the script tries to
+# 'make clean' and every file that survives that is considered
+# important.
+#
+# In any case, the tarfile will contain a tar-contents file so that
+# it can later be repackaged.
+#
+#
+# The *first* argument to the script - which is mandatory - is the name
+# of the final tarball.
+# 
+# The remaining arguments are the directories that are to be searched
+# for files. If none are given, '.' is assumed.
+
+: ${MAKE=make}
+: ${TAR=tar}
+MAKELEVEL=
+
+if [ $1 ]
+then
+   tarball=$1
+   shift
+else
+   echo usage: $0 tarfile { directory ... }
+   exit 1
+fi
+
+if [ $1 ]
+then
+   directories=$*
+else
+   directories=.
+fi
+
+if [ -r tar-ignore-global ]
+then
+   globaltarignore=tar-ignore-global
+else
+   globaltarignore=/dev/null
+fi
+
+rm -f /tmp/$$.files
+rm -f /tmp/$$.delete
+
+for d in $directories
+do
+   case $d in
+      */) dir=`echo $d | sed 's:/^::'` ;;
+      *) dir=$d ;;
+   esac
+   if [ -d $dir ]
+   then
+      if [ -r $dir/CVS/Entries ]
+      then
+         echo $dir is a CVS-managed directory
+	 if [ -r $dir/tar-ignore ]
+	 then
+            tarignore=$dir/tar-ignore
+         else
+            tarignore=$globaltarignore
+         fi
+         sed -e '\:^[^/]:d' -e 's:/::' -e 's:/.*::' < $dir/CVS/Entries | \
+             grep -F -v -x -f $tarignore > $dir/tar-contents
+         if [ -r $dir/tar-additional ]
+	 then
+            for f in `grep -F -v -x -f $dir/tar-contents $dir/tar-additional`
+            do
+		(cd $dir; $MAKE $f)
+		echo $f >> $dir/tar-contents
+            done
+         fi
+	 echo $dir/tar-contents >> /tmp/$$.delete
+      elif [ -r $dir/tar-contents ]
+      then
+         echo $dir has a tar-contents file already
+	 # everything is well.
+      else
+         echo $dir has no tar-contents 'file;' trying to make one
+         ( cd $dir
+           $MAKE clean
+           for f in *
+           do
+             if [ -r $f ] ; then echo $f >> tar-contents ; fi
+           done )
+         echo $dir/tar-contents >> /tmp/$$.delete
+      fi        
+      sed 's:^:'$dir/: $dir/tar-contents >> /tmp/$$.files
+      echo $dir/tar-contents >> /tmp/$$.files
+   else
+      echo 1>&2 $dir is not a directory
+      exit 1
+   fi
+done
+case $tarball in
+   *.tgz) tarreal=`echo $tarball | sed 's:tgz$:tar:'` ;;
+   *.gz) tarreal=`echo $tarball | sed 's:.gz$::'` ;;
+   *) tarreal=$tarball ;;
+esac
+if [ x$TARPREFIX = x ]
+then
+    echo $TAR cf $tarreal `cat /tmp/$$.files`
+    $TAR cf $tarreal `cat /tmp/$$.files`
+else
+    ln -s . $TARPREFIX
+    echo $TAR cf $tarreal `sed 's:^:'$TARPREFIX/: </tmp/$$.files`
+    $TAR cf $tarreal `sed 's:^:'$TARPREFIX/: </tmp/$$.files`
+    rm $TARPREFIX
+fi
+
+case $tarball in
+   *.tgz) echo gzip $tarreal ; gzip $tarreal ; mv $tarreal.gz $tarball ;;
+   *.gz) echo gzip $tarreal ; gzip $tarreal ;;
+   *) ;;
+esac 
+
+if [ -r /tmp/$$.delete ] ; then rm `cat /tmp/$$.delete` ; fi
+rm -f /tmp/$$.files
+rm -f /tmp/$$.delete
+
+exit 0
+

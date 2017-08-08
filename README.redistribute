@@ -1,0 +1,114 @@
+Please read these notes if you redistribute C-Mix other than
+just passing our tarballs on unchanged.
+
+Copyright issues
+================
+
+The source for C-Mix/II is generally freely redistributable;
+see the file COPYING.cmix for the exact details.
+
+There is, however, some exceptions which in some cases may
+limit your ability to legally redistribute source archives
+or compiled binaries:
+
+1. The source distribution that is built by 'make dist'
+   contains the output from the 'lex' and 'yacc' equivalents
+   that are found by the configure script.
+
+   Whether that output can be distributed depends on the
+   copying terms attached to the lex/yacc implementation
+   on your system.
+ 
+   If, like us, you use flex and a bison newer than version
+   1.24, there are no problems. And naturally, if you just
+   pass on the files you received from us without rebuilding
+   them, you'll be safe, too.
+
+   Beware, though, that in some cases, 'make srcdist' itself
+   *may* decide that the lexers and scanners need to be
+   rebuilt, and do so using the local tools.
+
+   If you find that you can't distribute the lexer and
+   scanner source files one option would be to exclude
+   them from the distribution you build, by removing them
+   from the lists in analyzer/tar-contents and
+   cmixshow/tar-contents. The users of your distribution
+   will then have to have appropriate tools to rebuild
+   them themselves.
+
+2. The source files getopt.cc, getopt1.cc, and getopt.h
+   in the analyzer directory are from the GNU C Library,
+   version 2.0.
+
+   These files are covered by the GNU Library General
+   Public Licence which is distributed as the file
+   src/LGPL. This means that the conditions for
+   distributing binaries incorporating them is
+   (slightly!) more restrictive than the conditions
+   governing the rest of C-Mix/II.
+
+   If you would rather build binaries not containing
+   any GNU code, you can configure with the option
+   --without-gnu-getopt. Then the code will use whatever
+   native getopt() routine is present on your system.
+
+None of the above considerations have relevance for your
+rights to distribute the speclib or the generating extensions
+that C-Mix/II create.
+
+The 'bindist' makefile target
+=============================
+
+The 'bindist' makefile target recompiles C-Mix from source and
+produces a tarball similar to the ones we distribute as 'binary
+distribution'. Actually this is the same mechanism we use to
+create them.
+
+The 'binary distributions' so created are designed to be installed
+locally by non-priveleged users.
+
+Packaging for administrator installation
+========================================
+
+If you consider creating C-Mix binaries for installation by system
+adminstrators in a more predictable environment, e.g. integrating
+it into a Linux distribution, you can probably do much better than
+the 'bindist' target. Some points to watch out for is:
+
+- The command used by C-Mix to preprocess C source is selected by
+  the configure script and built into the binary. Make sure that the
+  selected choice is likely to exist on the target system.
+  You can check the compiled-in default by running `cmix -B'.
+  If the guessed name is wrong you can override by setting the
+  STDCPP environment variable to it when running configure.
+
+- Various installation paths are built into the binary and
+  manfiles when making 'all'. Thus, even if you build your
+  package with a pseudo root filesystem, configure with the
+  installation paths being the directories where the binaries
+  should eventually work.
+
+  You use the 'install-strip' target with a pseudo root filesystem
+  by saying something like
+
+     make install-strip DESTDIR=/home/me/build/root
+
+  if your make command passes command line arguments to recursive
+  invocations of itself (GNU make does, for instance). Make sure to
+  set DESTDIR to an absolute path; it will be used from several
+  different directories.
+
+- autoconf does not support a separate installation directory
+  for documentation and examples, so 'make install' simply installs
+  it in $datadir/cmix along with some run-time data for the
+  cmix binary.
+
+  If you want the examples and user manual to end up somewhere
+  special (e.g. in /usr/doc/cmix for Debian GNU/Linux), it won't
+  do simply to configure with a nonstandard $datadir, because
+  you probably want to keep the shadow headers in /usr/share/cmix
+  (or whereever your normal $datadir is).
+
+  The solution is either to create $datadir/cmix/examples and
+  $datadir/cmix/manual as a symlinks to the proper places before
+  making install, or to move the directories afterwards.

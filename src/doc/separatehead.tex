@@ -1,0 +1,27 @@
+\renewenvironment{docpart}{}{}
+\end{docpart}
+\documentclass[twoside]{cmixdoc}
+%\bibliographystyle{apacite}
+
+\makeatletter
+\@ifundefined{@title}{\title{\cmix-documentation}}{}
+\@ifundefined{@author}{\author{The \cmix{} Team}}%
+{\expandafter\def\expandafter\@realauthor\expandafter{\@author}%
+\author{The \cmix{} Team\\(\@realauthor)}}
+\makeatother
+
+\AtBeginDocument{%
+\markboth{\hfill\today\quad\timenow\hfill\llap{\cmix\ documentation}}
+{\hfill\today\quad\timenow\hfill}}
+
+\renewcommand{\sectionmark}[1]{\markboth
+{\hfill\today\quad\timenow\hfill\llap{\cmix\ documentation}}
+{\rlap{\thesection. #1}\hfill\today\quad\timenow\hfill}}
+
+%\newboolean{separate}
+%\setboolean{separate}{true}
+
+\renewenvironment{docpart}{\begin{document}}%
+                          {\bibliography{cmixII}\printindex
+                           \end{document}}
+\begin{document}\shortindexingon

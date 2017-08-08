@@ -1,0 +1,386 @@
+%\iffalse metacomment
+%  File: mathligs.dtx
+%  Time-stamp: <97/11/06 08:47:30 panic>
+%  Author: Arne John Glenstrup, <panic@diku.dk>
+%
+%  This file is distributed in the hope that it will be useful,
+%  but WITHOUT ANY WARRANTY; without even the implied warranty of
+%  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. 
+%\fi
+\def\filename{mathligs.dtx}
+\def\fileversion{0.9$\alpha$}
+\def\filedate{1996/07/17}
+\def\docdate {1996/07/17}
+% \CheckSum{548}
+% \CharacterTable
+%  {Upper-case    \A\B\C\D\E\F\G\H\I\J\K\L\M\N\O\P\Q\R\S\T\U\V\W\X\Y\Z
+%   Lower-case    \a\b\c\d\e\f\g\h\i\j\k\l\m\n\o\p\q\r\s\t\u\v\w\x\y\z
+%   Digits        \0\1\2\3\4\5\6\7\8\9
+%   Exclamation   \!     Double quote  \"     Hash (number) \#
+%   Dollar        \$     Percent       \%     Ampersand     \&
+%   Acute accent  \'     Left paren    \(     Right paren   \)
+%   Asterisk      \*     Plus          \+     Comma         \,
+%   Minus         \-     Point         \.     Solidus       \/
+%   Colon         \:     Semicolon     \;     Less than     \<
+%   Equals        \=     Greater than  \>     Question mark \?
+%   Commercial at \@     Left bracket  \[     Backslash     \\
+%   Right bracket \]     Circumflex    \^     Underscore    \_
+%   Grave accent  \`     Left brace    \{     Vertical bar  \|
+%   Right brace   \}     Tilde         \~}
+%
+% \MakeShortVerb{\"}
+%
+% ^^A some definitions for this documentation
+%
+% \newcommand{\netaddress}[1]{\texttt{#1}}
+% \ProvideCommand{\package}[1]{\textsf{#1}}
+% \ProvideCommand{\packageoption}[1]{\textsf{#1}}
+%
+% \title{The \package{mathligs}-package
+%   \thanks{This file has version number \fileversion, 
+%           last revised \filedate,
+%           documentation dated \docdate.}}
+% \author{Arne John Glenstrup \\ 
+%   \netaddress{panic@diku.dk} \quad
+%   \netaddress{http://www.diku.dk/\~{}panic/}}
+%
+% \date{Printed \today}
+%
+% \maketitle
+%
+% \begin{abstract}
+%   This document describes the \package{mathligs} package, which is a part
+%   of the \package{semantic} package for easing the 
+%   input of \LaTeXe{} source files of scientific texts concerning
+%   semantics in Computer Science. This \package{mathligs} enables the user
+%   to define some ``pseudoligatures\footnote{Real \TeX{} ligatures are
+%   defined in the font files, but a similar---though less robust---effect
+%   can be achieved by manipulating \TeX{}' character input mechanism}''
+%   that will be in effect in math mode. In this way, the tedious typing of
+%   long macro names like `"\longrightarrow"' can be replaced by typing
+%   `"-->"'. For further information, see also the \package{semantic}
+%   package.
+% \end{abstract}
+%
+% ^^A Table of contents in two columns --- borrowed from the standard 
+% ^^A package of ``doc.dtx''
+% \ifmulticols
+%   \addtocontents{toc}{\protect\begin{multicols}{2}}
+% \fi
+%
+% \sloppy
+% \tableofcontents
+%
+% \section{User Guide}
+% \label{sec:UserGuide}
+%
+% To make use of \package{mathligs}, load the package \package{semantic}
+% with the option \packageoption{mathligs} in your \LaTeXe{} source file,
+% e.g.:
+% \begin{verbatim}
+% \documentclass{article}
+% \usepackage[mathligs]{semantic}
+% \end{verbatim}
+%
+% \subsection{Defining New Math Ligatures}
+% \label{sec:DefiningNewMathLigatures}
+%
+% \DescribeMacro{\mathlig} When the package is loaded, you can define new
+% ligatures for use in the math environments by using the
+% "\mathlig{"\meta{character sequence}"}{"\meta{ligature command}"}"
+% command. \meta{character sequence} is a sequence of
+% characters\footnote{There are some restrictions on the characters you can
+% use. This should be described here but isn't; basically you should stick
+% to using the characters \verbA` ' " ~ ! ? @ ^ * ( ) [ ] < > - + = | : ; . ,
+% / 0A\ldots "9", and certainly this should suffice for any sane person.}
+% that must be entered in the source file to achieve the effect of the
+% \meta{ligature command}. If for example you write
+% `"\mathlig{-><-}{\leftarrow\rightarrow}"', subsequently typing `"$-><-$"'
+% will produce $\leftarrow\rightarrow$.
+%
+% \subsection{Turning Math Ligatures On and Off}
+% \label{sec:TurningMathLigaturesOnAndOff}
+%
+% \DescribeMacro{\mathligson}\DescribeMacro{\mathligsoff} By default, math
+% ligatures are in effect when the \package{mathligs} package is loaded,
+% but this can be turned off and on by using the commands "\mathligsoff" and
+% "\mathligson". Thus, typing `"$-><-$ \mathligsoff $-><-$ \mathligson $-><-$"'
+% will produce $\leftarrow\rightarrow$ $- > < -$ $\leftarrow\rightarrow$.
+%
+% \subsection{Protecting Fragile Math Commands}
+% \label{sec:ProtectingFragileMathCommands}
+%
+% \DescribeMacro{\mathligprotect} Unfortunately, some macros used in math
+% mode will break when using 
+% \package{mathligs}, so they need to turned into protected macros with the
+% declaration "\mathligprotect{"\meta{macro}"}". \emph{NOTE:} This
+% declaration only needs to be issue once, best in the preamble.
+%
+% \section{Interaction with Other Packages}
+% \label{sec:InteractionWithOtherPackages}
+% Basically, it is best to load this package last. \emph{(This section
+% needs writing!)}
+%
+%\StopEventually{%
+%  \PrintIndex
+%  \PrintChanges
+%}
+%
+% \section{Implementation}
+% \label{sec:Implementation}
+%
+% \subsection{User Interface}
+% \label{sec:UserInterface}
+%
+% \begin{macro}{\if@mathligon}
+%   First we define a new "\if" flag that indicates whether the user has
+%   requested math ligatures to be active or not:
+%    \begin{macrocode}
+\newif\if@mathligon
+%    \end{macrocode}
+% \end{macro}
+% \begin{macro}{mathlig}
+%   Now, for the definition of "\mathlig", we first add the ligature
+%   character sequence $c_1c_2\cdots c_n$ to the internal ligature
+%   character lists, and then 
+%   we set up the macros "\@mathlig"$c_1c_2\cdots$ by calling
+%   "\@defligstep":
+%    \begin{macrocode}
+\DeclareRobustCommand\mathlig[1]{\@addligtolists#1\@@
+  \if@mathligon\mathligson\fi
+  \@setupfirstligchar#1\@@
+  \@defligstep{}#1\@@}
+%    \end{macrocode}
+% \end{macro}
+% \DescribeMacro{\@mathligson}\DescribeMacro{\@mathligsoff}
+% We define macros "\@mathligson" and "\@mathligsoff" for turning math
+% ligatures on and off internally without changing the status of the
+% "\if@mathligon" flag:
+%    \begin{macrocode}
+\def\@mathligson{\if@mathligon\mathligson\fi}
+\def\@mathligsoff{\if@mathligon\mathligsoff\@mathligontrue\fi}
+%    \end{macrocode}
+% \begin{macro}{\mathligprotect}
+% "\mathligprotect{"\meta{command}"}" defines \meta{command} to be a macro
+% expanding into "\@mathligsoff"\meta{old macro expansion
+% text}"\@mathligson":
+%    \begin{macrocode}
+\DeclareRobustCommand\mathligprotect[1]{\expandafter
+  \def\expandafter#1\expandafter{\expandafter\@mathligsoff#1\@mathligson}}
+%    \end{macrocode}
+% \end{macro}
+% \begin{macro}{\mathligson}
+% "\mathligson" changes the math code of all the characters that can occur
+% as the first character of a ligature character sequence to be active, and
+% sets the "\if@mathligon" flag:
+%    \begin{macrocode}
+\DeclareRobustCommand\mathligson{\def\do##1##2##3{\mathcode`##1=32768}%
+  \@domathligfirsts\@mathligontrue}
+%    \end{macrocode}
+% \end{macro}
+% \begin{macro}{\mathligsoff}
+% "\mathligsoff" does the reverse actions: resetting math codes to their
+% values as recorded at ligature definition time (stored in the
+% "\@domathligfirsts" data structure).
+%    \begin{macrocode}
+\DeclareRobustCommand\mathligsoff{\def\do##1##2##3{\mathcode`##1=##2}%
+  \@domathligfirsts\@mathligonfalse}
+%    \end{macrocode}
+% \end{macro}
+%
+% \section{Utilities}
+% \label{sec:Utilities}
+%
+% \DescribeMacro{\@mathliglink} "\@mathliglink" is a dummy macro that
+% should never be expanded, so we issue an error if it is:
+%    \begin{macrocode}
+\edef\@mathliglink{Error: \noexpand\verb|\string\@mathliglink| expanded}
+%    \end{macrocode}
+% \DescribeMacro{\@ifcharacter}\DescribeMacro{\@ifactive}
+% "\@ifcharacter"\meta{character}"{"\meta{truebranch}"}{"\meta{falsebranch}"}" 
+% tests whether \meta{character} is in fact a character and chooses the
+% appropriate branch. "\@ifactive" is analogous.
+%    \begin{macrocode}
+{\catcode`\A=11\catcode`\1=12\catcode`\~=13 % Letter, Other and Active
+\gdef\@ifcharacter#1{\ifcat A\noexpand#1\let\next\@firstoftwo
+                \else\ifcat 1\noexpand#1\let\next\@firstoftwo
+                \else\ifcat \noexpand~\noexpand#1\let\next\@firstoftwo
+                \else\let\next\@secondoftwo\fi\fi\fi\next}%
+\gdef\@ifactive#1{\ifcat \noexpand~\noexpand#1\let\next\@firstoftwo
+                  \else\let\next\@secondoftwo\fi\next}}
+%    \end{macrocode}
+%
+% \section{Data Structures}
+% \label{sec:DataStructures}
+%
+%    \begin{macrocode}
+\def\@domathligfollows{}\def\@domathligfirsts{}
+\def\makemathligsactive{\mathligson
+  \def\do##1##2##3{\catcode`##1=12}\@domathligfollows}
+\def\makemathligsnormal{\mathligsoff
+  \def\do##1##2##3{\catcode`##1=##3}\@domathligfollows}
+
+\def\@ifinlist#1#2{\@tempswafalse
+  \def\do##1##2##3{\ifnum`##1=`#2\relax\@tempswatrue\fi}#1%
+  \if@tempswa\let\next\@firstoftwo\else\let\next\@secondoftwo\fi\next}
+\def\@addligto#1#2{%
+  \@ifinlist#1#2{\def\do##1##2##3{\noexpand\do\noexpand##1%
+      \ifnum`##1=`#2 {\the\mathcode`#2}{\the\catcode`#2}\else{##2}{##3}\fi}%
+    \edef#1{#1}}%
+  {\def\do##1##2##3{\noexpand\do\noexpand##1%
+      \ifnum`##1=`#2 {\the\mathcode`#2}{\the\catcode`#2}\else{##2}{##3}\fi}%
+    \edef#1{#1\do#2{\the\mathcode`#2}{\the\catcode`#2}}}}
+
+\def\@addligtolists#1{\expandafter\@addligto\expandafter\@domathligfirsts
+  \csname\string#1\endcsname\@addligtofollowlist}
+\def\@addligtofollowlist#1{\ifx#1\@@\let\next\relax\else
+  \def\next{\expandafter\@addligto\expandafter\@domathligfollows
+    \csname\string#1\endcsname
+    \@addligtofollowlist}\fi\next}
+\def\@defligstep#1#2{\def\@tempa##1{\ifx##1\endcsname
+    \expandafter\endcsname\else
+    \string##1\expandafter\@tempa\fi}%
+  \expandafter\@def@ligstep\csname @mathlig\@tempa#1#2\endcsname{#1#2}}
+\def\@def@ligstep#1#2#3{%
+  \ifx#3\@@
+    \def\next{\def#1}%
+  \else
+    \ifx#1\relax
+      \def\next{\let#1\@mathliglink\@defligstep{#2}#3}%
+    \else
+      \def\next{\@defligstep{#2}#3}%
+    \fi
+  \fi\next}
+
+\def\@setupfirstligchar#1#2\@@{%
+  \@ifactive{#1}{\expandafter\expandafter\expandafter\@mathligredefactive
+    \expandafter\string\expandafter#1\expandafter{#1}{#1}}%
+  {\@defactive#1{\@startmathlig #1}\@namedef{@mathlig#1}{#1}}}
+
+% #1=char(other) #2=char(expanded as macro) #3=char(active)
+\def\@mathligredefactive#1#2#3{%
+  \def#3{{}\ifmmode\def\next{\@startmathlig#1}\else
+    \def\next{#2}\fi\next}%
+  \@namedef{@mathlig#1}{#2}}
+
+\def\@defactive#1{\@ifundefined{@definemathlig\string#1}%
+  {\@latex@error{Illegal first character in math ligature}
+    {You can only use \@firstmathligs\space as the first^^J
+      character of a math ligature}}%
+  {\csname @definemathlig\string#1\endcsname}}
+
+{\def\@firstmathligs{}\def\do#1{\catcode`#1=\active
+    \expandafter\gdef\expandafter\@firstmathligs
+    \expandafter{\@firstmathligs\space\string#1}\next}
+  \def\next#1{\expandafter\gdef\csname
+    @definemathlig\string#1\endcsname{\def#1}}
+  \do{"}"\do{@}@\do{/}/\do{(}(\do{)})\do{[}[\do{]}]\do{=}=
+  \do{?}?\do{!}!\do{`}`\do{'}'\do{|}|\do{~}~\do{<}<\do{>}>
+  \do{+}+\do{-}-\do{*}*\do{.}.\do{,},\do{:}:\do{;};}
+%    \end{macrocode}
+%
+% \section{Parser Algorithm}
+% \label{sec:ParserAlgorithm}
+%
+%    \begin{macrocode}
+\newtoks\@pushedtoks
+\newtoks\@seentoks
+
+\def\@startmathlig{\def\@lastvalidmathlig{}\@pushedtoks{}%
+  \@seentoks{}\@trymathlig}
+\def\@trymathlig{\futurelet\next\@@trymathlig}
+\def\@@trymathlig{\@ifcharacter\next{\@try@mathlig}{\@exitmathlig{}}}
+\def\@exitmathlig#1{%
+  \expandafter\makemathligsnormal\@lastvalidmathlig\mathligson
+  \the\@pushedtoks#1}
+\def\@tracemathligs#1{\typeout{char: #1 catcode: \the\catcode`#1
+    \space pushed:\the\@pushedtoks
+    \space seen:\the\@seentoks\space last\meaning\@lastvalidmathlig}}
+\def\tracingmathligson{\let\@trace@mathligs\@tracemathligs}
+\def\tracingmathligsoff{\let\@trace@mathligs=\@gobble}
+\tracingmathligsoff
+\def\@try@mathlig#1{\@trace@mathligs{#1}%
+  \@ifundefined{@mathlig\the\@seentoks#1}{\@exitmathlig{#1}}%
+  {\expandafter\ifx\csname @mathlig\the\@seentoks#1\endcsname\@mathliglink
+      \expandafter\@pushedtoks\expandafter=\expandafter{\the\@pushedtoks#1}%
+    \else
+      \expandafter\let\expandafter\@lastvalidmathlig
+      \csname @mathlig\the\@seentoks#1\endcsname
+      \@pushedtoks={}%
+    \fi
+    \expandafter\@seentoks\expandafter=\expandafter%
+    {\the\@seentoks#1}\makemathligsactive\obeyspaces\@trymathlig}}
+%    \end{macrocode}
+%
+% \section{Standard Math Ligatures}
+% \label{sec:StandardMathLigatures}
+%
+% Here are some nice standard ligatures:
+%    \begin{macrocode}
+\newcommand\semanticmathligs{%
+  \mathlig{-|}{\dashv}%
+  \mathlig{|=}{\models}%
+  \mathlig{|-}{\vdash}%
+  \mathlig{|->}{\mapsto}%
+  \mathlig{|-->}{\longmapsto}%
+  \mathlig{->}{\rightarrow}%
+  \mathlig{-->}{\mathop{\longrightarrow}\limits}%
+  \mathlig{--->}{\mathop{\relbar\joinrel\relbar\joinrel\rightarrow}\limits}%
+  \mathlig{---->}{\mathop{\relbar\joinrel\relbar\joinrel\relbar\joinrel
+      \relbar\joinrel\rightarrow}\limits}%
+  \mathlig{=>}{\Rightarrow}%
+  \mathlig{==>}{\Longrightarrow}%
+  \mathlig{~>}{\leadsto}%
+  \mathlig{<-}{\leftarrow}%
+  \mathlig{<--}{\mathop{\longleftarrow}\limits}%
+  \mathlig{<---}{\mathop{\leftarrow\joinrel\relbar\joinrel\relbar}\limits}%
+  \mathlig{<----}{\mathop{\leftarrow\joinrel\relbar\joinrel\relbar
+      \joinrel\relbar\joinrel\relbar}\limits}%
+  \mathlig{<=}{\Leftarrow}%
+  \mathlig{<==}{\Longleftarrow}%
+  \mathlig{<=>}{\Leftrightarrow}%
+  \mathlig{<==>}{\iff}%
+  \mathlig{>=}{\ge}%
+  \mathlig{=<}{\le}%
+  \mathlig{>>}{\gg}%
+  \mathlig{<<}{\ll}%
+  \mathlig{-<}{\prec}%
+  \mathlig{=-<}{\preceq}%
+  \mathlig{>-}{\succ}%
+  \mathlig{>-=}{\succeq}%
+  \mathlig{/=}{\ne}%
+  \mathlig{==}{\equiv}%
+  \mathlig{~=}{\cong}%
+  \mathlig{~-}{\simeq}%
+  \mathlig{~~}{\approx}%
+  \mathlig{+-}{\pm}%
+  \mathlig{-+}{\mp}%
+  \mathlig{++}{\mathbin{+\mkern -9mu+}}%
+  \mathlig{--}{\mathbin{-\mkern -2mu-}}%
+  \mathlig{[[}{\mathopen{[\mskip-2.5mu[}}%
+  \mathlig{]]}{\mathclose{]\mskip-2.5mu]}}%
+  \mathlig{[]}{\mathord{[\mskip 3mu]}}%
+  \mathlig{...}{\ldots}%
+%    \end{macrocode}
+% The following definitions allow the use of the "tt" font family in math
+% mode by typing "`"\meta{mathematical text}"'":
+%    \begin{macrocode}
+  \mathlig{`}{\textttfour}%
+  \def\textttfour##1##2##3##4`{##1##2##3\mathtt{##4}}}
+%    \end{macrocode}
+% \section{ToDo}
+% \label{sec:ToDo}
+% 
+% \begin{itemize}
+% \item Make removing of math ligatures possible (tricky!)
+% \item Make it possible to define a single char as a ligature
+%       (redefinition)
+% \end{itemize}
+%
+% \Finale
+\endinput
+
+% Local Variables: 
+% mode: latex
+% TeX-master: "mathligtest"
+% End: 

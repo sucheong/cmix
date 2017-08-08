@@ -1,0 +1,305 @@
+% File: dataflow.tex
+% Time-stamp: 
+% $Id: dataflow.tex,v 1.6 1999/07/19 12:01:00 makholm Exp $
+
+\providecommand{\docpart}{\input{separatehead}}
+\begin{docpart}
+
+\newcommand{\Wdef}{\ensuremath{W_{\!\mathrm{def}}}}
+\newcommand{\Wmay}{\ensuremath{W_{\!\mathrm{may}}}}
+\newcommand{\subdecl}[1]{\ensuremath{\widehat{#1}}}
+\newcommand{\exactlyone}{\mbox{one}}
+\newcommand{\keyword}[1]{\textbf{#1}}
+\newcommand{\Use}{\ensuremath{U}}
+\newcommand{\trulylocal}{\mbox{truelocals}}
+
+\section{Dataflow Analysis}
+The purpose of the dataflow analysis is to make a safe approximation
+of how and where objects are used. The result of the analysis is used
+during {\specialis}ation to avoid unnecessary {\memois}ation of
+spectime data.
+
+[Example: why in-use info makes a difference] [Example: why
+do-not-alter info makes a difference]
+
+\subsection{Write sets}
+An object is \emph{written} when a statement writes a value to it. The
+purpose of the write analysis is to calculate which objects are written
+in each program point. The calculation of write sets are based on the
+result of the pointer analysis (section~\ref{sec:PointerAnalysis})
+which only gives imperfect knowledge about reference patterns. We are
+therefore not able to calculate precise write information.
+
+[Example: If $\OPT(p) |-> \{ x, y \}$, we are not able to say which
+object \emph{definitely} gets written by the assignment \texttt{*p =
+  1}; we can, however, say that the assigment \emph{may} write
+\texttt{x} or \texttt{y}.]
+
+We will calculate two functions that map each program point in the
+program to two possibly different write sets: a definite-write set and
+a may-write set, denoted $\Wdef$ and $\Wmay$, respectively. The
+definite-write function is used to calculate which objects are in use
+in each function.
+
+The intuitive interpretation of $\Wdef$ and $\Wmay$ is that they
+describe what may happen until the current function returns.
+
+The may-write function is used to be sure to
+{\memois}e spectime objects that may be written to by a function.
+Even it the objects are not read by the function, {\memois}ation is
+necessary in order to correctly replictate the side effects when the
+function is later shared.
+
+Let $D$ be the set of all objects in the program and define the
+function $\subdecl{\bullet} : \powset(D) -> \powset(D)$ that
+(recursively) calculates all subdeclarations for each declaration in
+the argument set, \ie it calculates which objects a declaration
+encompasses.
+
+[Example: the objects in a struct are all the members and all members
+of these members, and so forth. Consider the definition \texttt{struct
+  S \{ int x, y; \} s;}. $\subdecl{\{s\}} = \{s, s.x, s.y\}$. ]
+
+
+
+Define the function $\exactlyone : \powset(D) -> \powset(D)$ that
+``rejects'' imprecise information:
+\[
+\begin{array}{lcl}
+\exactlyone(\{d\}) &=& 
+  \begin{array}[t]{ll}
+    \keyword{if} & d \mbox{ is contained in an array, or} \\
+                 & d \mbox{ is a heap-allocated object, or} \\
+                 & d \mbox{ is a local variable but not truly-local} \\                 
+    \keyword{then} & \emptyset \\
+    \keyword{else} & \{ d \} \\                 
+  \end{array} \\
+  \exactlyone(\_\!\_) &=& \emptyset \\
+\end{array}
+\]
+
+The write-functions can then be defined by the following recursive equations:
+\[
+\begin{array}{lll}
+  \hfil \bullet & \hfil \Wdef(\bullet) & \hfil \Wmay(\bullet) \\
+  \hrulefill & \hrulefill & \hrulefill \\
+  \cons{If}(e,\coreXref{b_{\mathrm{then}}},
+  \coreXref{b_{\mathrm{else}}}) & \Wdef(b_{\mathrm{then}}) \cap
+  \Wdef(b_{\mathrm{else}}) & \Wmay(b_{\mathrm{then}}) \cup
+  \Wmay(b_{\mathrm{else}}) \\
+  \cons{Goto}(\coreXref b) & \Wdef(b) &
+  \Wmay(b) \\
+  \cons{Return}(e?) & \emptyset & \emptyset \\
+  \cons{Assign}(e,e') & \subdecl{\exactlyone(\OPT(e))} &
+  \subdecl{\OPT(e)} \\
+  \cons{Call}(e?,\gamma,e_f,\vec e\,)\footnotemark
+  & \subdecl{\exactlyone(\OPT(e))}
+  \cup {\displaystyle \bigcap_{d_i \in \OPT(e_f)}} \Wdef(d_i) &
+  \subdecl{\OPT(e)} \cup {\displaystyle \bigcup_{d_i \in \OPT(e_f)}} \Wmay(d_i) \\
+  \cons{Alloc}(e,d,e') & \subdecl{\exactlyone(\OPT(e))} & \subdecl{\OPT(e)} \\
+  \cons{Free}(,e') & \emptyset & \emptyset \\
+  b = (\vec s,j) & \Wdef(j) \cup {\displaystyle \bigcup_{s_i \in \vec s}}
+  \Wdef(s_i) & \Wmay(j) \cup {\displaystyle \bigcup_{s_i \in \vec s}}
+  \Wmay(s_i) \\
+  \cons{Fun}(id,t,\vec d_p,\vec d_v,\vec b\,) & \Wdef(b_1) \setminus
+  \trulylocal(\bullet) &
+  \Wmay(b_1) \setminus  \trulylocal(\bullet) \\
+\end{array}
+\]\footnotetext{If the return value is thrown away, the parts refering to
+  $\OPT(e)$ are replaced by $\emptyset$. For an externally defined
+  function, $\Wdef$ and $\Wmay$ is $\emptyset$ and the $\OPT$-closure
+  of variables that are passed to external functions, respectively.}
+The \trulylocal function defines the subset of the local variables
+that are known to not be aliased between recursive calls to the function.
+See section~\ref{sec:TrulyLocals}. 
+
+\subsection{In-use sets}
+The in-use information is used to avoid {\specialis}ing a function
+or a program point with respect to spectime data that it does not use.
+
+We will now define an in-use function $\Use$ that maps every \coreC
+construct to a set of objects. For expressions, the in-use function
+can be calculated directly from the points-to information:
+\[
+\begin{array}{ll}
+  \hfil \bullet & \hfil \Use(\bullet) \\
+  \hrulefill & \hrulefill \\
+\cons{Var}(t,\coreXref d) & \emptyset \\
+\cons{EnumConst}(t,\coreXref\epsilon) & \emptyset \\
+\cons{Const}(t,c) & \emptyset \\
+\cons{Null}(t) & \emptyset \\
+\cons{Unary}(t,\diamond,e) & \Use(e) \\
+\cons{PtrArith}(t,e_1,\circ,e_2) &  \Use(e_1) \cup \Use(e_2) \\
+\cons{PtrCmp}(t,e_1,\circ,e_2) &  \Use(e_1) \cup \Use(e_2) \\
+\cons{Binary}(t,e_1,\circ,e_2) &  \Use(e_1) \cup \Use(e_2) \\
+\cons{Member}(t,e,m) &  \Use(e) \\
+\cons{Array}(t,e) &  \Use(e) \\
+\cons{DeRef}(t,e) &  \Use(e) \cup \subdecl{\OPT(e)} \\
+\cons{Cast}(t,e) &  \Use(e) \\
+\cons{SizeofType}(t,t') & \emptyset \\
+\cons{SizeofExpr}(t,e) & \Use(e) \\
+\end{array}
+\]
+
+For program points, the in-use function is defined by a set of
+recursive equations. For each statement $s$, let $\Use(s)$ be the set
+objects that are in use immediately before $s$ is executed, and let
+$\overline{\Use}(s)$ be the set objects that are in use immediately
+after $s$ is executed. [Example: Consider a statement $s$ and its
+immediate successor $s'$; then $\overline{\Use}(s) = \Use(s')$.
+\[
+\begin{array}{ll}
+  \hfil \bullet & \hfil \Use(\bullet)  \\
+  \hrulefill & \hrulefill \\
+  \cons{If}(e,\coreXref{b_{\mathrm{then}}},
+  \coreXref{b_{\mathrm{else}}}) & \Use(e) \cup \Use(b_{\mathrm{then}}) \cup
+  \Use(b_{\mathrm{else}}) \\
+  \cons{Goto}(\coreXref b) & \Use(b) \\
+  \cons{Return}(e?) & \Use(e) \\
+  \cons{Assign}(e,e') & \Use(e) \cup \Use(e') \cup
+  (\overline{\Use}(\bullet) \setminus \Wdef(\bullet)) \\
+  \cons{Call}(e?,\gamma,e_f,\vec e\,) & \Use(e) \cup \Use(e_f) \cup
+  {\displaystyle \bigcup_{e_i \in \vec e}} \Use(e_i) \cup
+  {\displaystyle \bigcup_{d_i \in \OPT(e_f)}} \Use(d_i) \cup
+  (\overline{\Use}(\bullet) \setminus
+  \Wdef(\bullet)) \\  
+  \cons{Alloc}(e,d,e') & \Use(e) \cup \Use(e') \cup
+  (\overline{\Use}(\bullet) \setminus \Wdef(\bullet)) \\
+  \cons{Free}(,e') & \Use(e') \cup (\overline{\Use}(\bullet) \setminus
+  \Wdef(\bullet)) \\ 
+  b = (\vec s,j) & \Use(s_1) \qquad (\mbox{or } \Use(j) \mbox{ if }
+  \vec s = []) \\
+  \cons{Fun}(id,t,\vec d_p,\vec d_v,\vec b\,) &
+  \Use(b_1) \setminus \trulylocal(\bullet) \\
+\end{array}
+\]
+
+\subsection{Constraint Formulation}
+The recursive equations above can be stated as a constraint system
+that can be solved by fixpoint iteration. The constraints employed are
+\[
+\begin{array}{ccccc}
+X = \bigcup Y_i &
+X = \bigcap Y_i &
+X = Y \setminus Z &
+X \subseteq Y &
+X \supseteq Y
+\end{array}
+\]
+where $X,Y,Z \in \powset(D)$. 
+
+For the definitely-write function, we want to find the greatest
+fixpoint\footnote
+	{because otherwise a loop in the function would block
+	the propagation of definitely-write information},
+and we therefore start out with the assumption that all
+objects are killed. The constraints generated are thus
+\[
+\begin{array}{lll}
+  \hfil \bullet & \hfil \mbox{Initial value} & \hfil \mbox{Constraints} \\
+  \hrulefill & \hrulefill & \hrulefill \\
+  \cons{If}(e,\coreXref{b_{\mathrm{then}}},
+  \coreXref{b_{\mathrm{else}}}) & \Wdef(\bullet) = D & \Wdef(\bullet) \subseteq
+  \Wdef(b_{\mathrm{then}}) ,\hfil \Wdef(\bullet) \subseteq
+  \Wdef(b_{\mathrm{else}}) \\
+  \cons{Goto}(\coreXref b) & \Wdef(\bullet) = D & \Wdef(\bullet) \subseteq \Wdef(b) \\
+  \cons{Return}(e?) & \Wdef(\bullet) = \emptyset &  \\
+  \cons{Assign}(e,e') & \Wdef(\bullet) = \subdecl{\exactlyone(\OPT(e))} & \\
+  \cons{Call}(e?,\gamma,e_f,\vec e\,)
+  & \Wdef(\bullet) = D
+  & \Wdef(\bullet) = {\displaystyle \bigcup} \{
+  \subdecl{\exactlyone(\OPT(e))}, X_{\mathrm{tmp}} \} \\
+  & X_{\mathrm{tmp}} = D & X_{\mathrm{tmp}} \subseteq \Wdef(d_i)
+  \qquad \forall d_i \in \OPT(e_f)  \\
+  \cons{Alloc}(e,d,e') & \Wdef(\bullet) = \subdecl{\exactlyone(\OPT(e))} \\ 
+  \cons{Free}(,e') & \Wdef(\bullet) = \emptyset \\
+  b = (\vec s,j) & \Wdef(\bullet) = D & \Wdef(\bullet) =
+  {\displaystyle \bigcup} \{ \Wdef(j) \} \cup \{ \Wdef(s_i) |
+  s_i \in \vec s \}  \\
+  \cons{Fun}(id,t,\vec d_p,\vec d_v,\vec b\,)
+  & \Wdef(\bullet) = D & \Wdef(\bullet) = \Wdef(b_1) \setminus
+  \trulylocal(\bullet) \\
+\end{array}
+\]
+
+For the may-write function, we want to find the least fixpoint, and we
+therefore start out with the assumption that no objects are killed.
+The constraints generated are thus
+\[
+\begin{array}{lll}
+  \hfil \bullet & \hfil \mbox{Initial value} & \hfil \mbox{Constraints} \\
+  \hrulefill & \hrulefill & \hrulefill \\
+  \cons{If}(e,\coreXref{b_{\mathrm{then}}},
+  \coreXref{b_{\mathrm{else}}}) & \Wmay(\bullet) = \emptyset & \Wmay(\bullet) \supseteq
+  \Wmay(b_{\mathrm{then}}) ,\hfil \Wmay(\bullet) \supseteq
+  \Wmay(b_{\mathrm{else}}) \\
+  \cons{Goto}(\coreXref b) & \Wmay(\bullet) = \emptyset & \Wmay(\bullet) \supseteq \Wmay(b) \\
+  \cons{Return}(e?) & \Wmay(\bullet) = \emptyset &  \\
+  \cons{Assign}(e,e') & \Wmay(\bullet) = \subdecl{\OPT(e)} & \\
+  \cons{Call}(e?,\gamma,e_f,\vec e\,)
+  & \Wmay(\bullet) = \subdecl{\OPT(e)}
+  & \Wmay(\bullet) \supseteq \Wmay(d_i) \qquad \forall d_i \in
+  \OPT(e_f)  \\ 
+  \cons{Alloc}(e,d,e') & \Wmay(\bullet) = \subdecl{\OPT(e)} \\ 
+  \cons{Free}(,e') & \Wmay(\bullet) = \emptyset \\
+  b = (\vec s,j) & \Wmay(\bullet) = \emptyset & \Wmay(\bullet) \supseteq
+  \Wmay(j) , \Wmay(\bullet) \supseteq \Wmay(s_i) \quad
+  \forall s_i \in \vec s  \\
+  \cons{Fun}(id,t,\vec d_p,\vec d_v,\vec b\,)
+  & \Wmay(\bullet) = \emptyset & \Wmay(\bullet) = \Wmay(b_1) \setminus
+  \trulylocal(\bullet) \\
+\end{array}
+\]
+
+When the definitely-write function has been calculated, the in-use
+function can be calculated. We want to find the least fixpoint, so the
+constraints generated are thus
+\[
+\begin{array}{lll}
+  \hfil \bullet & \hfil \mbox{Initial value} & \hfil \mbox{Constraints} \\
+  \hrulefill & \hrulefill & \hrulefill \\
+  \cons{If}(e,\coreXref{b_{\mathrm{then}}},
+  \coreXref{b_{\mathrm{else}}}) & \Use(\bullet) = \Use(e) & \Use(\bullet) \supseteq
+  \Use(b_{\mathrm{then}}) ,\hfil \Use(\bullet) \supseteq
+  \Use(b_{\mathrm{else}}) \\
+  \cons{Goto}(\coreXref b) & \Use(\bullet) = \emptyset & \Use(\bullet) \supseteq \Use(b) \\
+  \cons{Return}(e?) & \Use(\bullet) = \Use(e)   \\
+  \cons{Assign}(e,e') & \Use(\bullet) = \Use(e) \cup \Use(e') & \Use(\bullet)
+  \supseteq X_{\mathrm{tmp}} \\
+  & X_{\mathrm{tmp}} = \emptyset & X_{\mathrm{tmp}} =
+  \overline{U}(\bullet) \setminus \Wdef(\bullet) \\
+  \cons{Call}(e?,\gamma,e_f,\vec e\,)
+  & \Use(\bullet) = \Use(e) \cup \Use(e_f) \cup \Use(e_i) 
+  & \Use(\bullet) \supseteq X_{\mathrm{tmp}}, \Use(\bullet) \supseteq \Use(d_i) \qquad \forall d_i \in
+  \OPT(e_f)\\
+  & X_{\mathrm{tmp}} = \emptyset 
+  & X_{\mathrm{tmp}} = \overline{U}(\bullet) \setminus \Wdef(\bullet) \\
+  \cons{Alloc}(e,d,e') & \Use(\bullet) = \Use(e) \cup \Use(e') & \Use(\bullet)
+  \supseteq X_{\mathrm{tmp}} \\ 
+  & X_{\mathrm{tmp}} = \emptyset 
+  & X_{\mathrm{tmp}} = \overline{U}(\bullet) \setminus \Wdef(\bullet) \\
+  \cons{Free}(,e') & \Use(\bullet) = \Use(e') & \Use(\bullet)
+  \supseteq X_{\mathrm{tmp}} \\ 
+  & X_{\mathrm{tmp}} = \emptyset 
+  & X_{\mathrm{tmp}} = \overline{U}(\bullet) \setminus \Wdef(\bullet) \\
+  b = (\vec s,j) & \Use(\bullet) = \emptyset & \Use(\bullet) \supseteq
+  \Use(s_1) \qquad (\mbox{or } \Use(j)) \\
+  \cons{Fun}(id,t,\vec d_p,\vec d_v,\vec b\,)
+  & \Use(\bullet) = \emptyset & \Use(\bullet) = \Use(b_1) \setminus
+  \trulylocal(\bullet) \\
+\end{array}
+\]
+
+\subsection{Implementation level (1999-07-19)}
+\label{sec:DataflowImplementationLevel}
+\index{implementation level!dataflow analysis}
+
+The dataflow analyses have been implemented according to the above
+description.
+
+\end{docpart}
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 
+

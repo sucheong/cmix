@@ -1,0 +1,87 @@
+$Id: output-grammar.bnf,v 1.1.1.1 1999/02/22 13:50:30 makholm Exp $
+This file is a BNF documentation of the annotation file format as written
+by the main system and read by annotation browsing utilities.
+
+
+file ::= <producer-section> <types-section> <attr-section> <output-section>
+
+producer-section ::= Producer : <string>
+
+types-section ::= Types : <typelist>
+
+typelist ::= <type>
+          |  <typelist> <type>
+
+type ::= <string> = <typeid> ( <typeid> )
+
+typeid ::= <number>     // Use small nonnegative numbers; the front-end
+                        // uses these as array indices. Type 0 is the
+                        // root type; it should contain a single tree.
+    
+attr-section ::= Attributes : <attrlist>
+
+attrlist ::= <attr>
+          |  <attrlist> <attr>
+
+attr ::= <strunc> = <attrid>
+
+attrid ::= <number>     // Use small nonnegative numbers; the front-end
+                        // uses these as array indices. Attribute 0 is
+                        // for plain text and should not be declared.
+
+output-section: Output : <outputlist>
+
+outputlist ::= <output>
+            |  <outputlist> <output>
+
+output ::= # <typeid>
+        |  <output> <tree>
+
+tree ::= <block>
+      |  <hyper>
+      |  <text>
+
+block ::= <block-type> <indentation> { <blocklist> }
+
+block-type ::= C               // either no breaks or all breaks taken
+            |  I               // as few breaks as possible
+
+indentation ::= <number>
+
+blocklist ::= <group>
+	   |  <group> <separator> <blocklist>
+
+group ::= <empty>
+       |  <group> <tree>
+
+separator ::= ?
+           |  ? < <spaces> , <indentation >
+           |  !
+
+spaces ::= <number>
+
+hyper ::= <label> : <contents>
+       |  @ [ <linklist> ] <contents>
+
+linklist ::= <empty>
+          |  <linklist> ( <typeid> , <label> )
+
+label ::= <number>         // large numbers are OK here. Zero is not.
+
+contents ::= <tree>
+          |  <separator>   // for consistency with old grammer
+                           // ignored, converted to empty string
+
+text ::= <string> <attrid>
+
+
+----
+
+<string> ::= Any text enclosed in "double quotes".
+             The backslash and double quote character must be escaped
+             by a backslash. Null characters are not allowed at all.
+             All other characters are to appear verbatim.
+
+<number> ::= A non-empty sequence of decimal digits
+
+Whitespace between tokens is optional and ignored.

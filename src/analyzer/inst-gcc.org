@@ -1,0 +1,107 @@
+/* -*-fundamental-*-
+ * Authors:  Jens Peter Secher (jpsecher@diku.dk)
+ *           Arne Glenstrup (panic@diku.dk)
+ *           Henning Makholm (makholm@diku.dk)
+ * Content:  C-Mix system: Template instantiations, lists and own stuff
+ *
+ * Copyright © 1998. The TOPPS group at DIKU, U of Copenhagen.
+ * Redistribution and modification are allowed under certain
+ * terms; see the file COPYING.cmix for details.
+ */
+
+#include <cmixconf.h>
+#include "Plist.h"
+#include "Pset.h"
+#include "liststack.h"
+#include "symboltable.h"
+#include "array.h"
+#include "cpgm.h"       // for Numbered deriviations
+#include "corec.h"	// for Numbered deriviations
+#include "fixiter.h"	// for Numbered deriviations
+#include "directives.h" // for GeneratorDirective::Param
+#include "bta.h"        // for BType::Cause
+#include "commonout.h"  // for outputInterList
+#include "renamer.h"    // for NameMgr::NameBase
+#include "pa.h"         // for (indirect) Numbered deriviations
+#include "typearr.h"
+class PredConstraint;
+
+====== template class Plist<@>;
+  Anchor
+  AnyAtom
+  C_BasicBlock
+  C_Decl
+  C_Expr
+  C_Stmt
+  C_Type
+  C_UserDecl
+  Expr
+  FunDef
+  GeneratorDirective
+  GeneratorDirective::Param
+  InUseConstraint
+  Init
+  MemberDecl
+  OType
+  Output
+  Parse_Postfix
+  SourceDirective
+  SepNode
+  Stmt
+  TextAttribute
+  Type
+  UserDecl
+  VarDecl
+  WriteConstraint
+  -char const
+
+====== template class Pset<@>;
+  Numbered
+  C_Decl
+  C_UserDef
+  C_EnumDef
+  PAconstraint
+
+======= template class ListStack<@>;
+  UserDecl
+  MemberDecl
+  VarDecl
+
+======= template class Scope<@>;
+  ObjectDecl
+  MemberDecl
+  UserDecl
+
+======= template class SymbolTable<@>;
+  Indirection
+  ObjectDecl
+  UserAnno
+  const char /* or whatever, used for mere precence tables */
+
+class ALocSet;
+class InvALocSet;
+class SetConstraint;
+class MultiPointsTo;
+======= template class Narray<@>;
+  ALocSet *      /* used for several analysis results */
+  PA_Set *       /* used in the PA */
+  void_typearr::node * /* used for pools in the PA */
+  MultiPointsTo *
+  SetConstraint */* used for dataflow analysis result */
+  InvALocSet *   /* used for dataflow analysis */
+  BTvariable *   /* used for BTA results */
+  const char *   /* name tables */
+  Pset<PAconstraint>*  /* used in pa.cc */
+  C_Type *       /* used in bta.cc */
+  Plist<C_Type>* /* used in separate.cc */
+  SepNode *      /* used in separate.cc */
+  -unsigned      /* used by gegen */
+  Anchor *       /* used by outcore */
+  Output *       /* used by outbta.cc */
+  Plist<Output>* /* used in output.cc */
+  PredConstraint * /* used in transpred.cc */
+  NameMgr::NameBase * /* used in renamer.cc */
+
+====== template class typearr<@>;
+  PA_Set
+  C_Decl

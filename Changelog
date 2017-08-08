@@ -1,0 +1,197 @@
+   * Changed the handling of lifts of long double (which fails
+   on our development machined due to compiler incompabilities).
+   The default is now always to truncate lifted values to double,
+   except if otherwise explicitly requested. This means that
+   speclib.h is now architecture-independent.
+
+   * Improved the memory usage of the speclib when memoising
+   values of local variables for program points inside function.
+   This means that the interface between p-gen and speclib has
+   changed; old generating extensions cannot be used with the
+   new speclib and vice versa.
+
+   * Fixed the speclib such that the in-use information is now
+   actually used when comparing specialized program points
+   inside functions. It has been present since release 2.0.4,
+   but the code to test it during memoisation was never
+   written. (Embarassing!)
+
+   * Fixed bugs in the code generation for switch statements
+   and in the detection of dynamic pointers to specializable
+   functions. (Reported Mats Kindahl).
+
+   * Fixed bug in the restructuring phase. (Reported by
+   Tetsuro Tanaka).
+
+   * Rewrote much of the declarator parser to fix about a
+   dozen rare bugs. Sometimes redeclarations of typedef
+   names or declarations of functions returning "pointer
+   to function" or "pointer to array" were misparsed or
+   rejected as syntax errors.
+
+   * Made the generating extension fail a little more
+   gracefully when a stray static pointer to something
+   dynamic is dereferenced. This is not a complete solution,
+   because things may still go really bad if static pointers
+   to something static run wild.
+
+   * `make install' now again strips the installed binaries.
+   There is a `make install-strip' as well as a `make
+   install-nostrip' for those who want absolute control.
+
+2.0.11: 2000-01-04 17:56 Henning Makholm <makholm@diku.dk>
+
+   * Fixed a bug that made the restructuring phase of
+   p-gen sometimes take exponential time. (Reported
+   by Robert R. Henry).
+
+   * Restructured the implementation of `make install' so
+   that it works correctly when `install -s' refuses to
+   install a script. The old `make install' is now `make
+   install-strip', in compliance with the GNU Makefile
+   conventions. Thanks to Roman Hodek for pointing out that
+   the old code sometimes failed.
+
+2.0.10: 1999-12-15 16:11 Henning Makholm <makholm@diku.dk>
+
+   * Fixed several bugs reported by Peter Møller Neergaard.
+
+   * Fixed bug where generated identifiers in p_res might
+   collide with identifiers declared by the standard
+   headers. (Reported by Steen Andersen)
+
+2.0.9: 1999-11-25 18:19 Henning Makholm <makholm@diku.dk>
+
+   * Fixed bug with infinite recursion in the analyzer when
+   certain recursive types was encountered. (Reported by
+   Søren Laursen).
+
+   * Fixed bug in the interaction between const and certain
+   typedefs. (Reported by Robert R. Henry)
+
+2.0.8: 1999-11-04 17:07 Henning Makholm <makholm@diku.dk>
+
+   * Fixed bug in the implementation of sizeof(expr)
+   (Reported by Steen Andersen)
+
+   * Restructured the test suite to be more flexible and
+   more DejaGnu-like
+
+   * Fixed bug in 'producing' specifications for goal and
+   generator directives. (Reported by Søren Laursen).
+
+   * The codebase now compiles with HP's aCC compiler in
+   addition to GCC.
+
+2.0.7: 1999-10-11 19:06 Henning Makholm <makholm@diku.dk>
+
+   * Contrary to 2.0.6, this source compiles with GCC
+   2.95.1. Thanks to John Gerard Malecki and Peter Makholm
+   for helping with test compilations.
+
+2.0.6: 1999-10-06 12:00 Henning Makholm <makholm@diku.dk>
+
+   * New `-R' switch to the *generating extension* which
+   turns off the restructuring pass.
+
+   * Fixed minor bugs in restructuring code.
+
+   * Made lexical analysis more robust with respect to
+   differing end-of-line conventions. Thanks to J. Reyes
+   for pointing out that stray CR's could be handled more
+   gracefully than as "illegal characters"
+
+2.0.5: 1999-07-20 15:02 Henning Makholm <makholm@diku.dk>
+
+   * Fixed small oops in release 2.0.4 -- the example
+   makefiles installed in $(datadir) did not work.
+
+2.0.4: 1999-07-18 21:30 Henning Makholm <makholm@diku.dk>
+
+   * Included global liveness analysis that allows functions
+   and program points to be shared even when the value of
+   some static variables differ, if those static variables
+   are not needed by the shared code.
+
+   * The generating extensions are now C programs, as is the
+   speclib, so the end user no longer needs a C++ compiler.
+   Binary distributions do not depend on a specific C++
+   compiler anymore.
+
+   * New, more detailed, user annotations for external
+   functions.
+
+   * The speclib now tries to reintroduce structured control
+   flow in residual programs. This makes them much easier
+   to read.
+
+   * New more intuitive way to control how the example
+   makefiles locate the speclib.
+
+   * Better heuristics for choosing an external C
+   preprocessor at configuration time. The environment variable
+   that overrides it at configure time is now STDCPP rather
+   than CPP.
+
+   * Better specialization of conditionals in cases where a
+   static operand to a boolean operator sometimes determines
+   the result of the test.
+
+2.0.3: 1999-03-08 15:52 Henning Makholm <makholm@diku.dk>
+
+   * Fixed bug that made cmix crash almost instantly when
+   compiled with certain versions of egcs. Thanks to John
+   Gerard Malecki for providing debugger traces that helped
+   pinpoint this one.
+
+   * Any kind of initializers in the subject program should
+   work now.
+
+   * New directive "unsigned chars are glyphs" that controls
+   the lifting mode for unsigned char.
+
+   * Abstract types now have an optional signedness attribute
+   which helps control how they are lifted.
+
+   * Included makefile and manpage patches from Peter Makholm.
+
+   * Internal tidying-up of the Pgen-speclib interface that
+     - allows arbitrary function return types
+     - tries harder to avoid mentioning types or variables in
+       the residual program before they are declared
+     - relies less on C++ features (eventually we'd like the
+       genererating extensions to be C programs)
+
+2.0.2: 1999-03-01 19:04 Henning Makholm <makholm@diku.dk>
+
+   * Minor manual page fixes.
+
+   * Better pretty-printing of residual programs; residual
+   variables only get declared if they are mentioned by
+   actual residual code.
+
+   * New algorithm for generating residual names. The old
+   one had quadratic worst-case behavior (and exhibited it
+   in practise, too) and didn't try to guarantee that names
+   stayed unique when truncated to 31 letters.
+
+   * Reorganized the speclib so that one only need to link
+   with the math library if the subject program uses floating
+   point types.
+
+   * Fixed some bugs in the support for heap allocation.
+
+2.0.1: 1999-02-22 19:59 Henning Makholm <makholm@diku.dk>
+
+   * By mistake, some files weren't included in the 2.0.0
+   tarballs. They should all be here now.
+
+   * Fixed a code generation bug (the value of assignment
+   expressions couldn't always be relied on).
+
+2.0.0: 1999-02-22 13:06 Henning Makholm <makholm@diku.dk>
+
+   * Finally after almost two years of rewriting, we proudly
+   present C-Mix 2.0.0. If there was a changelog way back
+   before we started that, it has been lost in the mists
+   of time.

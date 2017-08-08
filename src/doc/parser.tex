@@ -1,0 +1,493 @@
+% File: parser.tex
+% Time-stamp: 
+
+\providecommand{\docpart}{\input{separatehead}}
+\begin{docpart}
+
+\begin{center}
+  \fbox{\huge\textsl{THIS SECTION IS OUT-OF-DATE}}    
+\end{center}
+
+\section{The C Parser}
+\label{sec:Parser}\index{parser}
+
+The input to \cmix is a program fragment in form of a set of C source
+files. The purpose of the parser is to transform the set of C source
+files into an internal representation of the program fragment such
+that all dependencies between the files are resolved. In the rest of
+this section we will denote such a program fragment as \emph{the
+ subject program}.\index{subject program}
+
+\subsection{Lexing and preprocessing}
+Each source is first put through the standard C preprocessor available
+on the system (defaults to \texttt{cpp}) and then divided into tokens
+by GNU \texttt{flex}. The file \texttt{lex.l} specifies how the input
+files are divided into tokens. This is done in a standard way, except
+that identifiers are divided into \texttt{typedef}ed names and regular
+names. The lexer also picks up \texttt{\#pragma}s that contain user
+annotations.
+
+\subsection{The parser}
+We use the Roskind Grammar~\cite{Roskind:1996:CGrammar}, a freely
+available grammar for the full \ansiC. This grammar works with
+standard YACC tools (we use GNU bison).
+
+The parser (\texttt{gram.\{y,cc\}}) parses the tokens (produced by by
+the lexer) and creates an internal representation of the subject program.
+During parsing, a stack of symbol tables
+(\texttt{liststack.h},\texttt{symboltable.h}) keep track of the
+variable and function defintions such that the stack represents the
+static scope of names. 
+
+For parsing declarations, a
+set of ``switchboard'' containers (\texttt{syntax.\{h,cc\}}) are
+created and filled with information during parsing. From these
+switchboards, the internal representation of the subject program's types is
+created. For instance, consider the declaration \texttt{char *const
+  (*(*g)()) []}, \ie variable \texttt{g} is a pointer to function
+returning pointer to array of const pointer to char.  The type of
+\texttt{g} is created by merging the switch boards for the prefix and
+the postfix (which themselves are merged from other switchboards).
+
+\subsection{Linkage}
+\cmix can read in multiple source files and ``link'' them together
+to produce a single module for specialization.
+
+Earlier this was implemented by sharing the declarations
+between the \ansiC representations of the source files. This created
+problems with structs, however: C uses structural equivalence for
+struct types between source files, so it is legal for the members of a
+struct to have different names in different files. Sharing the
+declarations implied that the types would also be identical in several
+files, so there was no way to tell the type checker that, say,
+\texttt{f().x} is the first member of the struct that \texttt{f}
+returns, when mentioned in one file, but the second member of the
+struct when mentioned in another file.
+
+Now we use the following strategy:
+
+An identifier with external linkage has a declaration structure for
+each of the source files it is declared in. Each of these declarations
+is typed with local types.
+
+The parser also maintains, however, a union--find structure on
+declarations that tie all the declarations for each externally linked
+identifier together. This union--find structure is maintained such
+that the definition, if one has been met, is the representative
+element of the declaration set.
+
+When a new declaration is constructed, a type unification routine is
+run to make sure its type structurally matches the types of any
+previous declarations for it. During this unification process it might
+be needed to unify usertype declarations; a parallel union--find
+structure for usertype declarations is used to build an equivalence
+relation that will later be used by the c2core translation of types.
+
+\subsection{Initializers}
+Inializers are not evaluated during parsing.
+
+\subsection{Internal C representation}
+
+\subsection{Parsing types}
+
+\subsubsection{basic types}
+The \ansiC specification gives tremendous freedom with regard to type
+specifications which is a problem when building a parser. The
+following observations are important when creating a faithful \ansiC
+parser:
+
+\begin{enumerate}
+  \item There are two type qualifiers, \texttt{const} and
+    \texttt{volatile}. Each of these can be left unspecified or they can
+    be specified a number of times, \eg \texttt{const volatile const
+      volatile a}, which should give a warning.
+  \item There are five basic types which are \texttt{int},
+    \texttt{char}, \texttt{float}, \texttt{double}, \texttt{void}. The
+    base type can be left unspecified, in which case it will be
+    considered an \texttt{int}.
+  \item There are two size specifiers, \texttt{short} and
+    \texttt{long}. If none is specified, the size is ``normal''.
+  \item There are two sign qualifiers, \texttt{signed} and
+    \texttt{unsigned}. If non is specified, the type will be
+    considered \texttt{signed}.
+\end{enumerate}
+
+Testing that a declaration/definition is in order can be done by
+having a ``switchboard'' structure (\texttt{Parse\_Type}) with a field
+for each of the above groups. During parsing, such a structure can be
+filled in and checks can be made whether two such structures can be
+combined; this is done by the \texttt{combine} function.
+\texttt{combine} is appropriate for productions ``below''
+\texttt{type\_qualifier\_list} and \texttt{base\_type\_specifier} in
+the grammar.  The result is a new \texttt{BaseType}.
+
+\subsubsection{User-defined types}
+We use the term user-defined types about \texttt{struct}ures,
+\texttt{union}s and \texttt{enum}erations.  Appropriate for
+productions \texttt{sue\_type\_specifier} in the grammar. User defined
+types are put in the global symboltable \texttt{userdecl}.
+
+\subsubsection{Type synonyms}
+Type synonyms are types defined by \texttt{typedef}s.
+\texttt{typedef}ined names have to be registered as such as soon as
+possible [insert example that shows this].
+
+All type synonyms are expanded during parsing, so the internal
+representation of the subject program does not contain type synonyms.
+
+\subsection{Storage modifiers}
+There are five storage modifiers, \texttt{static}, \texttt{extern},
+\texttt{typedef}, \texttt{auto}, \texttt{register}. If non is
+specified, \texttt{auto} is assumed.  These modifiers are also checked
+by \texttt{combine}, because only one of them is allowed at any time.
+
+\subsection{Declarators}
+Declarators are variable identifiers and possibly a bit-field size.
+
+\subsection{Internal representation of C programs}
+All data structures are annotated by a line number. This makes it
+possible to give meaningful user feed-back.
+
+\subsection{Declarations and Definitions}
+A declaration that allocates storage is called a
+\emph{definition}. Consider the program
+  \begin{verbatim}
+     struct S2;
+     struct S1 { struct S2 *s2p; };
+     struct S2 { struct S1 *s1p; };
+  \end{verbatim}
+The first line is a declaration and last two are definitions. Consider
+the legal program
+  \begin{verbatim}
+     struct S1 { struct S3 *p; };
+     struct S2 { struct S3 *q; };
+     struct S3 { struct S2 *r; };
+  \end{verbatim}
+When \texttt{struct S3} is met for the first time (in the definiation
+of \texttt{struct S1}), it is not necessary to know the size of
+\texttt{struct S3}, since we just need a pointer to such a user type.
+This is also the case in the second line, but here we must ensure that
+\texttt{p} and \texttt{q} have the same type. It is thus necessary to
+introduce a declaration that serves as a place holder as soon as a new
+names is met. When the definition appears, the missing information is
+filled into the placeholder. A definition must have a \emph{complete}
+type.
+
+
+User types can be declared in an inner scope. During parsing we need
+to maintain several levels of scope (\texttt{usertypes}), \eg in
+  \begin{verbatim}
+     struct S;
+     enum { A } E;
+     void f()
+     {
+        enum { A } E;
+        struct S;
+        ...
+     }
+  \end{verbatim}
+But it seems that most compilers complains about the initializer not
+being of the right type in the following (but not a redeclaration).
+  \begin{verbatim}
+    struct S { int a; };
+
+    int f1 (struct S b)
+    {
+       struct S;
+       struct S { char d; };
+       struct S c = b;
+       return 42;
+    }
+  \end{verbatim}
+so we can just make a general lookup in case there is no definition of
+the structure. If it is a definition, we make a new structure.
+
+\begin{itemize}
+\item In declarations it is the \emph{types} that flow upwards in the
+  parse tree. If a declaration is a user type, the actual declaration
+  (\ie members, etc) is put in the \texttt{usertypedecls} table as a
+  side-effect.
+\item Shouldn't \emph{varargs} be a type (instead of an attribute for
+  functions)? No, I think we need both a tag in a function decl and a
+  special type.
+\item Types of variables and funtions are lists of
+  \texttt{Type}s.
+\item \grule{abstract\_declarator} (using
+  \grule{postfixing\_abstract\_declarator},
+  \grule{array\_abstract\_declarator},
+  \grule{unary\_abstract\_declarator},
+  \grule{postfix\_abstract\_declarator}) are concerned with pointers,
+  arrays and functions in declarations (\ie the cast \texttt{(char
+    \underline{**[2][3]});}). They should result in a list of types
+  (\ie array 2 of array 3 of pointer to pointer to char).
+  $\Rightarrow$ build a temporary list during parsing and use this
+  list later on to construct a real type list. For array sizes, make a
+  reverse list.
+\item All declarations are put in scope as side-effect --- it is the
+  types that propagate up to through the grammar rules. When a scope
+  ends, the declarations (objecs,structures) are placed in the right
+  spot (\eg a function definition, a statement block, etc.). Wait, no!
+  The problem is that the identifier in a declaration appears in the
+  middle of the type (\eg \texttt{int *\underline{a}[]}). Hmm, in case
+  of \grule{indentifier\_declarator} we could propagate the both the
+  identifier and the list of postfixes. $\Rightarrow$
+  \texttt{Parse\_IdPostfix}.
+\item We do not want to make a full type (in the sense of the user
+  class \texttt{Type}) or a full declaration
+  (\textsl{xxx}\texttt{Decl}) before it can be fully instantiated (but
+  we have to, anyway).  Different temporary forms exist
+  (\texttt{Parse\_}\textsl{xxx} in \texttt{syntax.h}) as fragments of
+  a real type/declaration.
+\item When the base type (\ie ``the end point'' of a type chain) is
+  known, only pointers, array, and functions postfix modifiers with
+  qualifiers (\texttt{const}/\texttt{volatile}) can occur later on.
+  Thus, at this point a real type (\texttt{Type}) can be instantiated
+  and parsed on. The above mentioned postfixes can then be converted
+  to a list of types, effectively pushing the base type in front of
+  them.
+\item is it wise to represent ellipsis as a type (at the end of a type
+  list) as it is now, or should it be an attribute?
+\item Some of the namespaces are only used as place-holders for a
+  particular name. The actual declaration is placed under another
+  declaration, to which it belongs.
+\end{itemize}
+
+\subsection{New Design}
+\begin{itemize}
+\item Typedefs, variables, prototypes, and enum constants can all be
+  put in the class \texttt{VarDecl}. Special cases: Prototypes are
+  not allowed to have initializers (and ellipsis is a type); Typedefs
+  can only have storage specifier \texttt{Typedef} and cannot have
+  initializers; Enum constants cannot have storage specifier.
+  Function \emph{definitions} are in the same namespace, which means
+  we need to look in both scopes to check for name clashes.
+\item What about function type declarations? Where are they handled
+  (or: are \emph{all} the ``redundant parenthesis'' really redundant)?
+\item The grammar would like us to put the (type of) the identifier in
+  scope as soon as possible. In the case of \eg \texttt{int
+    a=sizeof(a);} we need to be able to look up the type of \texttt{a}
+  when the expression is parsed.
+\item Lists of declarations (\texttt{list<Vardecl*>}) are parsed
+  around between the rules, until such a list can be put in the right
+  place, \eg under a function definition. To create a list from \eg
+  ``\texttt{int a,*b,c}'', we also need to carry around the \emph{base
+    type} of such a declaration; \texttt{int} in this case. An
+  alternative to this is to associate a stack of lists with each
+  namespace and put declaration there. This would be a good choice for
+  user types, as they ``pop up'' inside regular declarations.
+\item Struct/enum/typedef types should point to the actual declaration
+  so we don't have to search for anything after the program has been
+  parsed. This also goes for function calls; they should point to
+  function definitions.
+\item Now I got it! We hold the user types in a stack of lists that
+  follows the normal scope and is re-enterable (\texttt{liststack.h}).
+  This enables us to deal with the user types as mere side-effects. At
+  the end of a block the full list of user types can be put where it
+  belongs. 
+\item Old-style function parameters are inserted into current scope as
+  declarations with no type. When the proper declaration turns up the
+  declaration is updated. The global variable \texttt{old\_function}
+  signifies that we are parsing an old-style function definition,
+  which enables the appropriate checks and update.
+\item Typedef types point to the declaring \texttt{VarDecl}. This way
+  we can give meaningful messages and it should be possible to keep
+  typedefs as real typedefs (\ie no weird expansion). This, however,
+  demands that great care is taken to follow typedefs when comparisons
+  are made: both operands in a comparison could potentially be
+  typedefs. We a \texttt{normalize} function on types.
+\item Local enum declarations in old-style function [this is realy
+  bizarrre!] need to temporarily lower the \texttt{old\_function} flag
+  because the enum constants are in the same namespace as the fromal
+  parameters.
+\item A global variable \texttt{reenter\_scope\_at\_next\_block} is needed
+  to tell \texttt{enter\_scope()} to continue with the parameter
+  declarations when the statements of a funtion definition is parsed.
+  Wait, no, the statement can just start yet another scope (as they
+  normally do). Now objects, like userdecls can be put in a liststack
+  --- the symboltable only holds the names and pointers into this list.
+  No, this makes it \emph{realy} hard to enforce the rules about
+  variables only being declared once because the parameters of a
+  function \emph{is} in the same scope as the rest of the variables
+  declared in the body of the function. We still have to separate
+  these, though. This can be done by using the liststack method and
+  ``emptying'' the list of declarations when the parameter list is
+  finish (but keeping the \emph{names} in scope).
+\item Initializers are trouble. It is possible to use \texttt{sizeof}
+  constructs in constant expressions in a program (which then makes it
+  implementation dependend, of course). This means that we have to
+  make an array like \texttt{char a[sizeof(int)]} dynamic because the
+  size is unknown. This brings us another problem: if such a structure
+  has an initializer, we would have to keep this initializer attached
+  to the structure in the CoreC representation (\ie not transform all
+  initializer to assignments), because it would be an error if the
+  initializer is too big, and if it too small the structure should be
+  padded with zeros. Solution: we provide an ``evaluate-sizeof''
+  switch which enables the user to force sizeof expression to be
+  static. If this switch is not turned on and initializers are used
+  for a structure that thus becomes dynamic, we abort specialization.
+\item We have to backpatch in some cases. An array with no explicit
+  size but initializers have to be backpatched, and unspecified types
+  in old-style functoin declarations have to be converted to
+  \texttt{int}s. It is also necessary to ``normalize'' initializer
+  when they are converted to assignments.
+\item It is a good idea to keep the string representation of
+  constants, in case they must be lifted or as an aid when giving
+  feed-back.
+\item Characters are kept as ints (we do not support wide charaters).
+  In general there is a problem with literal constants. If we don't
+  want to be implementation dependend, we cannot do must partial
+  evaluation. This is because constants take the ``least'' type they
+  fit into.
+\item The lexer/parser can be configured to serve as a general purpose
+  ANSI C lexer/parser by setting \texttt{only\_ANSI} in \texttt{lex.l}
+  to 1. Otherwise, the lexer/parser will recognize special \cmix words
+  (\texttt{pure}, \texttt{residual}, \texttt{spectime} and
+  \texttt{cmix\_}\dots) which will give rise to special attributes in
+  the internal representation\ref{internal-rep}. In the former case
+  these attributes can safely be ignored.
+\item Labels have function scope $\Rightarrow$ only one symboltable
+  for labels. To resolve forward references from \texttt{goto}
+  statements to labels, the following is done. The label symboltable
+  contains \emph{backpatch fields}; Backpatch fields
+  (\texttt{Indirection}) contain pointers to label statements; A label
+  statement contains the label name and the actual statement; the goto
+  statements contain pointers to backpatch fields. The indirection
+  introduced by the backpatch field makes it easy to do backpathing.
+\item Shouldn't prototype result in \texttt{FunDef}initions? If so, a
+  truly external function could be recognized as one that has a null
+  body.
+\item Initializer are added after the declaration. This means we need
+  the symboltable to cash the last added item. (Returning the last
+  added declaration is not a good idea since it then has to be wrapped
+  into something in the parser in order to keep it in scope.)
+\item \texttt{return} statements have to know what type the embedding
+  function must return to be able to make casts/checks.
+  
+\end{itemize}
+
+\subsection{Sanity check and internal linking}
+\begin{itemize}
+\item \cmix reads in all files. 
+    
+\end{itemize}
+
+\subsection{Run-through}
+\subsubsection{Types}
+When all files are parsed we run through the program. Every type has
+to be complete (except \texttt{typedef}s) and every construction need
+to abey the ANSI standard. To avoid processing a construction several
+times we need a check flag in every construction.
+
+\subsubsection{Types}
+Every internal structure should have a \texttt{check} functions that
+either approves of the internal state and returns a type, or complains
+about it. This is done recursively. We could, at this point, make
+every implicit cast explicit --- when all subexpressions have been
+checked, we could call an \texttt{explicit} function that either
+returns the subexpression as is (if the types match) or inserts an
+explicit cast. The latter is also done when an expression statement
+discards its return value.
+
+To do this we need a \texttt{composite} function that returns the
+composite type of the subexpressions, \eg in \texttt{1 + 2.0} the type
+of composite type of the the two subexpressions would be
+\texttt{float} and this could be parsed together with each
+subexpression to the explicit function. This way the above expression
+would become \texttt{(float) 1 + 2.0}. As a side-effect the expression
+would get this type.
+
+What about structures? They do not need to have the same name, only be
+structurally equal. And this is a problem when we have (mutually)
+recursive structs: To avoid infinite comparison we need a ``mark''
+that tells us that we already are in the process of comparing these
+two structs (or unions). This mark has to be an integer that we are
+sure that a depth-first search is not tricked: the two marks have to
+have the exact same value. The mark could be a class variable for
+\texttt{StructDecl}s and get counted up every time two unmarked
+structs are seen.
+
+There are two kinds of type ``equality'' in C: 1) a \emph{full}
+equlity where the types have to be \emph{exactly} the same, \ie same
+qualifiers and main type (recursively). 2) a \emph{cast} equality
+where one type can be more or equally qualified, but not less
+(recursively).  The first kind is needed when \eg structures are
+compared. The second one is needed in \eg an assignment \texttt{a =
+  b}, where \texttt{a} is allowed to be more qualified than
+\texttt{b}. Therefore we need a parameterized equality function for
+each type to do both sorts of comparison.
+
+[Maybe all types (and declarations) should have a ``isComplete'',
+``isScalar'', \etc flag. This way it can be set/resolved once only.]
+
+In function call expressions, the left-hand side has to be a pointer
+to a function (!). This is a problem, since a function
+\emph{definition} is considered a function \emph{designator} and not a
+pointer to a function. May we should make an explicit conversion.
+
+When temporary variables are generated from arrays, they need to be of
+type pointer.
+
+There is a problem with ``normalizing'' all types during translation
+to Core C: \syntax{typedef}s annotated ``include'' (\ie they are to be
+omitted from the residual, but defined in some included file instead)
+should not be ``normalized''. Maybe normalizing should only be done to
+disambiguate (\eg ``is this an array type?''). What happens if we try
+to normalize an incomplete type?
+
+[In general: we need two error and warning functions: one with line
+number and one without. And a debug output functions that work with
+streams Or a special debug stream; we want free form expressiveness
+--- actually we also want that for warnings. What about errors? here
+we want to output something (preferably in free form) and then stop
+execution. Could this be done by operators on streams alone? \eg.
+
+\begin{verbatim}
+    global.fatal << fatalMsg << e->pos()
+                 << e->name << `` is not ...'' << die();
+\end{verbatim}
+Maybe it could be done with macros?
+]
+
+We need to copy types in the \texttt{Cpgm} representation.
+
+\texttt{PostExpr} and \texttt{PreExpr} can be the same type.
+
+Expressions have to be tagged whether or not they are rvalues or
+lvalues.
+
+\subsection{Output}
+\begin{itemize}
+\item Potentially, every declaration needs an anchor. To avoid putting
+  excessively many anchors in the output, each declaration annotation
+  must have an indicator that controls whether this declaration should
+  have an anchor. Anchors are taken from a global pool to make them
+  unique. [This causes problems when using multiple files.] Also,
+  every object that is connected with a declaration needs a back-link
+  to the declaration to facilitate output, \ie annotations need the
+  name of a declaration (and its anchor) to produce readable output.
+\end{itemize}
+
+\subsection{Implementation level (01.03.1999)}
+\label{sec:ParserImplementationLevel}
+\index{implementation level!parser}
+
+The parser is implemented as described above, except
+\begin{enumerate}
+\item If several declarations of the same union exist, we require that
+  the members are declared in the same order. (According to \ansiC, all
+  possible permutations should be tried out.)
+\item 
+\end{enumerate}
+
+Files: \texttt{lex.l}, \texttt{gram.y}, \texttt{gram.cc},
+\texttt{liststack.h}, \texttt{syntax.\{h,cc\}},
+\texttt{cpgm.\{h,cc\}}, \texttt{tags.\{h,cc\}},
+\texttt{symboltable.h}, \texttt{}, \texttt{}. 
+
+
+\end{docpart}
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 
+

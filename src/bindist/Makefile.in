@@ -1,0 +1,108 @@
+## -*- Makefile -*- @configure_input@
+## Authors:  Jens Peter Secher (jpsecher@diku.dk)
+##           Henning Makholm (makholm@diku.dk)
+##           Arne John Glenstrup (panic@diku.dk)
+## Content:  C-Mix system: Binary distribution makefile
+##
+## Copyright © 1998. The TOPPS group at DIKU, U of Copenhagen.
+## Redistribution and modification are allowed under certain
+## terms; see the file COPYING.cmix for details.
+
+SHELL	= /bin/sh
+CHMOD	= chmod
+EXEEXT	= @EXEEXT@
+EXEPREFIX = @EXEPREFIX@
+INSTALL = @INSTALL@
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+INSTALL_SCRIPT = @INSTALL_SCRIPT@
+INSTALL_DATA = @INSTALL_DATA@
+
+complain:
+	@echo This Makefile is only good for making install
+	@echo Nothing happens
+
+#------------------------------------------
+# DIRECTORY INFORMATION
+#------------------------------------------
+# really, these values should be set by giving proper options to
+# the configure script instead of tampering with the makefile
+
+prefix	= @prefix@
+exec_prefix = @exec_prefix@
+bindir	= @bindir@
+# for trampoline script and cmixshow
+datadir	= @datadir@
+# for shadow headers
+libdir = @libdir@
+# for libcmix.a
+includedir = @includedir@
+# for cmix/speclib.h
+srcdir = @srcdir@
+
+#------------------------------------------
+# GOAL RULES
+#------------------------------------------
+
+.PHONY: all info dvi install dist check
+.PHONY: mostlyclean clean distclean realclean
+.PHONY: complain
+
+info:	complain
+
+dvi:	complain
+
+install-strip: install
+install:
+	@echo checking that the binaries actually do run on this machine:
+	./$(EXEPREFIX)cmixdist.bin
+	test -d $(DESTDIR)$(includedir)			|| \
+	  mkdir $(DESTDIR)$(includedir)
+	test -d $(DESTDIR)$(includedir)/cmix		|| \
+	  mkdir $(DESTDIR)$(includedir)/cmix
+	test -d $(DESTDIR)$(datadir)			|| \
+	  mkdir $(DESTDIR)$(datadir)
+	test -d $(DESTDIR)$(datadir)/cmix		|| \
+	  mkdir $(DESTDIR)$(datadir)/cmix
+	test -d $(DESTDIR)$(datadir)/cmix/shadow	|| \
+	  mkdir $(DESTDIR)$(datadir)/cmix/shadow
+	test -d $(DESTDIR)$(datadir)/cmix/shadow/sys	|| \
+	  mkdir $(DESTDIR)$(datadir)/cmix/shadow/sys
+	test -d $(DESTDIR)$(bindir)			|| \
+	  mkdir $(DESTDIR)$(bindir)
+	test -d $(DESTDIR)$(libdir)			|| \
+	  mkdir $(DESTDIR)$(libdir)
+	sed -e 's*/usr/lib/cpp*"@STDCPP@"*' \
+	    -e "s/EXEEXT=/EXEEXT=$(EXEEXT)/" \
+	    -e s:/usr/local/share/:$(datadir)/: \
+	    -e 's:/usr/local/lib/:'$(libdir)/: \
+		< $(srcdir)/bin/cmix > trampoline
+	-$(CHMOD) 755 trampoline
+	$(INSTALL_SCRIPT) trampoline $(DESTDIR)$(bindir)/cmix
+	-rm -f trampoline
+	$(INSTALL_PROGRAM) $(srcdir)/lib/$(EXEPREFIX)cmix$(EXEEXT) \
+	  $(DESTDIR)$(libdir)/cmix$(EXEEXT)
+	$(INSTALL_DATA) $(srcdir)/lib/libcmix.a \
+	  $(DESTDIR)$(libdir)/libcmix.a
+	$(INSTALL_DATA) $(srcdir)/../include/cmix/speclib.h \
+	  $(DESTDIR)$(includedir)/cmix/speclib.h
+	$(INSTALL_PROGRAM) $(srcdir)/bin/$(EXEPREFIX)cmixshow$(EXEEXT) \
+	  $(DESTDIR)$(bindir)/cmixshow$(EXEEXT)
+	for f in `cd $(srcdir)/../share/cmix/shadow ; echo *.h sys/*.h` ; do \
+	  $(INSTALL_DATA) $(srcdir)/../share/cmix/shadow/$$f \
+	    $(DESTDIR)$(datadir)/cmix/shadow/$$f \
+		|| exit 1 ; done ; exit 0
+
+mostlyclean:
+
+clean:
+
+distclean: clean
+	rm Makefile config.*
+
+realclean: distclean
+
+dist: complain
+
+bindist: complain
+
+check: complain

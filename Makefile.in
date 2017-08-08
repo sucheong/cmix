@@ -1,0 +1,191 @@
+## -*- Makefile -*-
+## Authors:  Jens Peter Secher (jpsecher@diku.dk)
+##           Henning Makholm (makholm@diku.dk)
+##           Arne John Glenstrup (panic@diku.dk)
+## Content:  C-Mix system: Main directory makefile
+##
+## Copyright © 1999. The TOPPS group at DIKU, U of Copenhagen.
+## Redistribution and modification are allowed under certain
+## terms; see the file COPYING.cmix for details.
+
+#------------------------------------------
+# VARIOUS SPECIAL FLAGS
+#------------------------------------------
+
+RELEASE	     = `tr -d '\n ' < release-stamp`
+SHORTRELEASE = `tr -d '\n. -' < release-stamp`
+
+RPMRELEASE = 1
+
+RPMBUILDARCH = @RPMBUILDARCH@
+RPMSHORTARCH = `echo @host_os@ | sed 's/^\(..\).*$$/\1/'`
+
+PWD	= `pwd`
+
+VENDOR	     = @VENDOR@
+PACKAGER     = @PACKAGER@
+DISTRIBUTION = @DISTRIBUTION@
+
+RPM	= rpm
+RPMRC	= @RPMRC@
+
+#------------------------------------------
+# GOAL RULES
+#------------------------------------------
+
+all main_goal:
+	if [ -d src ] ; then cd src ; $(MAKE) all ; fi
+	if [ -d doc ] ; then cd doc ; $(MAKE) all ; fi
+
+info:
+	@echo C-Mix does not have any info files
+
+dvi:
+	@echo The Makefile cannot yet chain to the doc directories
+	@echo in order to make dvi files.
+
+check:
+	@[ -d testsuite ] || \
+		( echo The regression test is not installed ; exit 1 )
+	@[ -d src ] || \
+		( echo Cannot build and check when the source tree is not installed ; exit 1 )
+	cd src ; $(MAKE) check_all
+	cd testsuite ; $(MAKE) check
+
+$(floodingtargets):
+	if [ -d src ] ; then cd src ; $(MAKE) $@ ; fi
+	if [ -d testsuite ] ; then cd testsuite ; $(MAKE) $@ ; fi
+	if [ -f doc/Makefile ] ; then cd doc ; $(MAKE) $@ ; fi
+	if [ -f examples/Makefile ] ; then cd examples ; $(MAKE) $@ ; fi
+
+#------------------------------------------
+# INSTALL RULES
+#------------------------------------------
+
+.PHONY: install-src install-doc install-examples
+
+install-src:
+	[ ! -d src ] || (cd src && $(MAKE) install)
+
+install-doc:
+	[ ! -d doc ] || (cd doc && $(MAKE) install)
+
+install-examples:
+	[ ! -d examples ] || (cd examples && $(MAKE) install)
+
+install: install-src install-doc install-examples
+
+#------------------------------------------
+# TARBALL RULES
+#------------------------------------------
+
+.PHONY: distok docdist srcdist testdist bindist rpmdist
+
+distok:
+	@[ $(srcdir) = . ] && exit 0 ; \
+	   echo The only distribution that can be made in a secondary ; \
+	   echo build directory is a bindist
+
+dist:
+	@echo There are several kinds of distributions you can make from here:
+	@if [ -d src/analyzer ] && [ $(srcdir) = . ] ; then \
+		echo '  make srcdist  -' \
+		'distribution containing source files' ; fi
+	@if [ -d src/bindist ] ; then \
+		echo '  make bindist  -' \
+		'distribution containing newly-built binaries' ; fi
+	@if [ -d testsuite ] && [ $(srcdir) = . ] ; then \
+		echo '  make testdist -' \
+		'distribution containing the regression test suite' ; fi
+	@if [ -d doc/manual ] && [ -d examples ] && [ $(srcdir) = . ] ; then \
+		echo '  make docdist  -' \
+		'distribution containing manual and example files' ; fi
+
+bindist:
+	@[ -d src ] || \
+		( echo The source tree is not installed ; exit 1 )
+	cd src/bindist ; $(MAKE) bindist
+
+srcdist: distok
+	@[ -d src ] || \
+		( echo The source tree is not installed ; exit 1 )
+	TARPREFIX=cmix-$(RELEASE) MAKE='$(MAKE)' \
+		./tarmaker cm$(SHORTRELEASE)s.tgz \
+		. src src/analyzer src/cmixshow src/speclib \
+		src/shadow src/shadow/sys src/bindist src/doc
+	if [ x$(HAVE_LONG_FILE_NAMES) = xyes ] ; then \
+	  $(LN) cm$(SHORTRELEASE)s.tgz cmix-$(RELEASE)-src.tar.gz ; \
+	fi
+
+testdist: distok
+	@[ -d testsuite ] || \
+		( echo The regression test is not installed ; exit 1 )
+	rm -f testsuite/cmix-*.log testsuite/cmix-*.sum
+	TARPREFIX=cmix-$(RELEASE) MAKE='$(MAKE)' \
+		./tarmaker cm$(SHORTRELEASE)t.tgz testsuite \
+		testsuite/config testsuite/doc testsuite/cmix
+	if [ x$(HAVE_LONG_FILE_NAMES) = xyes ] ; then \
+	  $(LN) cm$(SHORTRELEASE)t.tgz cmix-$(RELEASE)-test.tar.gz ; \
+	fi
+
+docdist: distok
+	@[ -d doc ] || \
+		( echo The documentation is not here ; exit 1 )
+	TARPREFIX=cmix-$(RELEASE) MAKE='$(MAKE)' \
+		./tarmaker cm$(SHORTRELEASE)d.tgz \
+		. doc doc/manual examples \
+		examples/ack    examples/binsearch examples/cint \
+		examples/fft    examples/matrix    examples/pow \
+		examples/printf examples/ray       examples/turing
+	if [ x$(HAVE_LONG_FILE_NAMES) = xyes ] ; then \
+	  $(LN) cm$(SHORTRELEASE)d.tgz cmix-$(RELEASE)-doc.tar.gz ; \
+	fi
+
+rpmdist: srcdist testdist docdist
+	$(SED) -e "s/@Version@/$(RELEASE)/" \
+	       -e "s/@Release@/$(RPMRELEASE)/" \
+	       -e "s/@Vendor@/$(VENDOR)/" \
+	       -e "s/@Packager@/$(PACKAGER)/" \
+	       -e "s/@Distribution@/$(DISTRIBUTION)/" \
+	< cmix-spec.in > cmix-$(RELEASE).spec
+	$(RM) rpmrc.cmix
+	$(SED) -e 's/^ *rpmfilename *:.*$$//' \
+	       -e 's/^ *sourcedir *:.*$$//' \
+	       -e 's/^ *rpmdir *:.*$$//' \
+	       -e 's/^ *srcrpmdir *:.*$$//' < $(RPMRC) > rpmrc.cmix
+	echo "rpmfilename : %{NAME}-%{VERSION}-%{RELEASE}-$(RPMBUILDARCH).rpm" \
+	>> rpmrc.cmix
+	echo "sourcedir : $(PWD)" >> rpmrc.cmix
+	echo "rpmdir : $(PWD)" >> rpmrc.cmix
+	echo "srcrpmdir : $(PWD)" >> rpmrc.cmix
+	$(RPM) --rcfile rpmrc.cmix -ba cmix-$(RELEASE).spec
+	$(LN) cmix-$(RELEASE)-$(RPMRELEASE)-$(RPMBUILDARCH).rpm cm$(SHORTRELEASE)$(RPMSHORTARCH).rpm
+	$(LN) cmix-$(RELEASE)-$(RPMRELEASE).src.rpm cm$(SHORTRELEASE)s.rpm
+
+#------------------------------------------
+# CLEANING RULES
+#------------------------------------------
+
+Clean:
+	$(RM) *~ .#* conftest.* core warning
+
+Realclean:
+	$(RM) configure
+
+Distclean:
+	$(RM) config.log config.cache config.status Makefile
+
+#------------------------------------------
+# RULES FOR MAINTAINING THE MAKEFILE ITSELF
+#------------------------------------------
+
+Ajour: configure Makefile
+
+Makefile: Makefile.in config.status
+	./config.status
+
+config.status: configure
+	./config.status --recheck
+
+configure: configure.in
+	autoconf --localdir=.

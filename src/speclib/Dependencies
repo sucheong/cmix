@@ -1,0 +1,52 @@
+## Content:  C-Mix system: Dependencies for speclib
+
+## This file is separate from the makefile so that the automatic
+## updates from `make depend` does not interfere with the generation
+## of makefiles from `configure`
+
+# DO NOT DELETE THIS LINE -- mkdep uses it.
+# DO NOT PUT ANYTHING AFTER THIS LINE, IT WILL GO AWAY.
+
+
+auxilary.o: \
+ ../cmixconf.h \
+ auxilary.c \
+ speclib.h
+code.o: \
+ ../cmixconf.h \
+ code.c \
+ code.h \
+ speclib.h
+floats.o: \
+ ../cmixconf.h \
+ code.h \
+ floats.c \
+ speclib.h
+mem.o: \
+ ../cmixconf.h \
+ mem.c \
+ speclib.h
+memhash.o: \
+ ../cmixconf.h \
+ memhash.c \
+ speclib.h
+pending.o: \
+ ../cmixconf.h \
+ pending.c \
+ speclib.h
+restruct.o: \
+ ../cmixconf.h \
+ code.h \
+ restruct.c \
+ speclib.h
+rusage.o: \
+ ../cmixconf.h \
+ rusage.c \
+ speclib.h
+unparse.o: \
+ ../cmixconf.h \
+ code.h \
+ speclib.h \
+ unparse.c
+
+# IF YOU PUT ANYTHING HERE IT WILL GO AWAY

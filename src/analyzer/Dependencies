@@ -1,0 +1,854 @@
+## Content:  C-Mix system: Dependencies for the analyzer
+
+## This file is separate from the makefile so that the automatic
+## updates from `make depend` does not interfere with the generation
+## of makefiles from `configure`
+
+# DO NOT DELETE THIS LINE -- mkdep uses it.
+# DO NOT PUT ANYTHING AFTER THIS LINE, IT WILL GO AWAY.
+
+
+ALoc.o: \
+ ../cmixconf.h \
+ ALoc.cc \
+ ALoc.h \
+ Plist.h \
+ Pset.h \
+ array.h \
+ auxilary.h \
+ commonout.h \
+ corec.h \
+ diagnostic.h \
+ outcore.h \
+ output.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+InvALocSet.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.cc \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ array.h \
+ auxilary.h \
+ commonout.h \
+ corec.h \
+ diagnostic.h \
+ outcore.h \
+ output.h \
+ strings.h \
+ tags.h \
+ ygtree.h
+array.o: \
+ ../cmixconf.h \
+ array.cc \
+ array.h \
+ auxilary.h
+auxilary.o: \
+ ../cmixconf.h \
+ auxilary.cc \
+ auxilary.h \
+ diagnostic.h
+bta.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ bta.cc \
+ bta.h \
+ commonout.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ options.h \
+ outcore.h \
+ output.h \
+ tags.h \
+ ygtree.h
+btsanity.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ btsanity.cc \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ output.h \
+ tags.h \
+ ygtree.h
+btsolve.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ bta.h \
+ btsolve.cc \
+ ygtree.h
+btvars.o: \
+ ../cmixconf.h \
+ Plist.h \
+ Pset.h \
+ array.h \
+ auxilary.h \
+ bta.h \
+ btvars.cc \
+ commonout.h \
+ corec.h \
+ diagnostic.h \
+ outcore.h \
+ output.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+c2core.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ c2core.cc \
+ c2core.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ options.h \
+ output.h \
+ tags.h \
+ ygtree.h
+check.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ check.cc \
+ cpgm.h \
+ diagnostic.h \
+ options.h \
+ output.h \
+ tags.h \
+ ygtree.h
+closures.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ closures.cc \
+ corec.h \
+ diagnostic.h \
+ options.h \
+ output.h \
+ tags.h \
+ ygtree.h
+cmix.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ c2core.h \
+ cmix.cc \
+ commonout.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ fileops.h \
+ options.h \
+ outanno.h \
+ outcore.h \
+ output.h \
+ parser.h \
+ renamer.h \
+ symboltable.h \
+ syntax.h \
+ tags.h \
+ ygtree.h
+commonout.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ commonout.cc \
+ commonout.h \
+ diagnostic.h \
+ output.h \
+ strings.h \
+ tags.h \
+ ygtree.h
+corec.o: \
+ ../cmixconf.h \
+ Plist.h \
+ auxilary.h \
+ corec.cc \
+ corec.h \
+ diagnostic.h \
+ options.h \
+ strings.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+cpgm.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ cpgm.cc \
+ cpgm.h \
+ diagnostic.h \
+ options.h \
+ output.h \
+ tags.h \
+ ygtree.h
+dataflow.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Nset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ commonout.h \
+ corec.h \
+ dataflow.cc \
+ diagnostic.h \
+ fixiter.h \
+ gegen.h \
+ options.h \
+ outanno.h \
+ outcore.h \
+ output.h \
+ renamer.h \
+ strings.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+diagnostic.o: \
+ ../cmixconf.h \
+ auxilary.h \
+ diagnostic.cc \
+ diagnostic.h \
+ options.h \
+ symboltable.h
+direc-tab.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ cpgm.h \
+ diagnostic.h \
+ direc-tab.cc \
+ directives.h \
+ fileops.h \
+ options.h \
+ output.h \
+ tags.h \
+ ygtree.h
+direc-yy.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ cpgm.h \
+ diagnostic.h \
+ direc-tab.h \
+ direc-yy.cc \
+ directives.h \
+ output.h \
+ tags.h \
+ ygtree.h
+directives.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.cc \
+ directives.h \
+ options.h \
+ output.h \
+ parser.h \
+ symboltable.h \
+ syntax.h \
+ tags.h \
+ ygtree.h
+fileops.o: \
+ ../cmixconf.h \
+ auxilary.h \
+ diagnostic.h \
+ fileops.cc \
+ fileops.h \
+ options.h
+fixiter.o: \
+ ../cmixconf.h \
+ Pset.h \
+ auxilary.h \
+ fixiter.cc \
+ fixiter.h \
+ ygtree.h
+gegen.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ gegen.cc \
+ gegen.h \
+ output.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+generator.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ generator.cc \
+ output.h \
+ strings.h \
+ tags.h \
+ ygtree.h
+gg-cascades.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ diagnostic.h \
+ gegen.h \
+ gg-cascades.cc \
+ output.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+gg-code.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ diagnostic.h \
+ gegen.h \
+ gg-code.cc \
+ options.h \
+ output.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+gg-decl.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ gegen.h \
+ gg-decl.cc \
+ output.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+gg-expr.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ diagnostic.h \
+ gegen.h \
+ gg-expr.cc \
+ options.h \
+ output.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+gg-memo.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Nset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ diagnostic.h \
+ gegen.h \
+ gg-memo.cc \
+ options.h \
+ output.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+gg-struct.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ gegen.h \
+ gg-struct.cc \
+ output.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+gram-tab.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ gram-tab.cc \
+ liststack.h \
+ options.h \
+ output.h \
+ parser.h \
+ symboltable.h \
+ syntax.h \
+ tags.h \
+ ygtree.h
+gram.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ cpgm.h \
+ diagnostic.h \
+ gram.cc \
+ liststack.h \
+ options.h \
+ output.h \
+ parser.h \
+ symboltable.h \
+ syntax.h \
+ tags.h \
+ ygtree.h
+init.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ diagnostic.h \
+ init.cc \
+ output.h \
+ tags.h \
+ ygtree.h
+inst-gcc.o: \
+ ../cmixconf.h \
+ Plist.h \
+ Pset.h \
+ array.h \
+ auxilary.h \
+ bta.h \
+ commonout.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ fixiter.h \
+ inst-gcc.cc \
+ liststack.h \
+ output.h \
+ pa.h \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ typearr.h \
+ ygtree.h
+lex-yy.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ fileops.h \
+ gram-tab.h \
+ lex-yy.cc \
+ options.h \
+ output.h \
+ parser.h \
+ symboltable.h \
+ syntax.h \
+ tags.h \
+ ygtree.h
+options.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ getopt.h \
+ options.cc \
+ options.h \
+ output.h \
+ tags.h \
+ ygtree.h
+outbta.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ bta.h \
+ commonout.h \
+ corec.h \
+ diagnostic.h \
+ outanno.h \
+ outbta.cc \
+ outcore.h \
+ output.h \
+ tags.h \
+ ygtree.h
+outcore.o: \
+ ../cmixconf.h \
+ Plist.h \
+ Pset.h \
+ array.h \
+ auxilary.h \
+ commonout.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ options.h \
+ outcore.cc \
+ outcore.h \
+ output.h \
+ renamer.h \
+ strings.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+outcpgm.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ commonout.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ options.h \
+ outcpgm.cc \
+ output.h \
+ tags.h \
+ ygtree.h
+outmisc.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ commonout.h \
+ corec.h \
+ diagnostic.h \
+ outanno.h \
+ outcore.h \
+ outmisc.cc \
+ output.h \
+ tags.h \
+ ygtree.h
+outpa.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ commonout.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ options.h \
+ outanno.h \
+ outcore.h \
+ outpa.cc \
+ output.h \
+ tags.h \
+ ygtree.h
+output.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ diagnostic.h \
+ output.cc \
+ output.h \
+ ygtree.h
+pa.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ fixiter.h \
+ options.h \
+ output.h \
+ pa.cc \
+ pa.h \
+ strings.h \
+ tags.h \
+ typearr.h \
+ ygtree.h
+release.o: \
+ release.cc
+renamer.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ output.h \
+ renamer.cc \
+ renamer.h \
+ symboltable.h \
+ tags.h \
+ ygtree.h
+separate.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ diagnostic.h \
+ fixiter.h \
+ options.h \
+ output.h \
+ separate.cc \
+ tags.h \
+ ygtree.h
+share.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ cpgm.h \
+ diagnostic.h \
+ directives.h \
+ options.h \
+ output.h \
+ share.cc \
+ tags.h \
+ ygtree.h
+strings.o: \
+ strings.cc \
+ strings.h
+structsort.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ diagnostic.h \
+ output.h \
+ structsort.cc \
+ tags.h \
+ ygtree.h
+syntax.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ cpgm.h \
+ diagnostic.h \
+ output.h \
+ syntax.cc \
+ syntax.h \
+ tags.h \
+ ygtree.h
+taboos.o: \
+ taboos.cc
+tags.o: \
+ ../cmixconf.h \
+ diagnostic.h \
+ strings.h \
+ tags.cc \
+ tags.h
+transpred.o: \
+ ../cmixconf.h \
+ ALoc.h \
+ InvALocSet.h \
+ InvPset.h \
+ Plist.h \
+ Pset.h \
+ analyses.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ diagnostic.h \
+ fixiter.h \
+ options.h \
+ output.h \
+ tags.h \
+ transpred.cc \
+ ygtree.h
+typearr.o: \
+ ../cmixconf.h \
+ Plist.h \
+ array.h \
+ auxilary.h \
+ corec.h \
+ diagnostic.h \
+ tags.h \
+ typearr.cc \
+ typearr.h \
+ ygtree.h
+varstrings.o: \
+ ../cmixconf.h \
+ ../varstrings.h \
+ varstrings.cc
+ygtree.o: \
+ ../cmixconf.h \
+ Nset.h \
+ Pset.h \
+ auxilary.h \
+ diagnostic.h \
+ options.h \
+ ygtree.cc \
+ ygtree.h
+
+# IF YOU PUT ANYTHING HERE IT WILL GO AWAY

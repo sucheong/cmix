@@ -1,0 +1,1331 @@
+% File: speclib.tex
+
+\providecommand{\docpart}{\input{separatehead}}
+\title{Specialization library functions for \cmix}
+\author{Arne John Glenstrup}
+\begin{docpart}
+\maketitle
+
+\MakeShortVerb{"}
+
+\begin{center}
+  \fbox{\huge\textsl{THIS SECTION IS VERY OUT-OF-DATE}}    
+\end{center}
+
+
+\section{Specialization Library Functions}
+\emph{NB:
+Restructuring code has been added to the library, and is turned on as
+default.  To switch off restructuring, set the integer "cmixRestruct"
+to 0 (zero).  The restruturing algorithms used are slightly tweaked versions
+of the algorithms presented by Cifuentes in her
+thesis~\cite{cifuentes:rev-comp-tech}
+}
+\label{sec:SpecializationLibraryFunctions}
+\index{speclib}\index{function!library!specialization}
+
+This section describes the auxillary functions that are used by the
+generating extension. They are grouped into three main classes:
+\begin{description}
+\item[Memory management functions] that take care of saving, restoring and
+  comparing the static store,
+\item[Memoization functions] that handle the sets of specializations points 
+  that are waiting to be specialized, and checks whether a specialization
+  point with the same static store has been seen before
+\item[Code generation functions] that simply create and gather up the
+  residual code, including lifting functions and functions for generating
+  fresh identifiers.
+\item[Miscellaneous helper functions] including functions for handling
+  static return values.
+\end{description}
+Section~\ref{sec:SLFMemoryManagement} is based on an excerpt from a report
+by~\cite{Andersen:1997:StaticMemoryManagementInCMix}.
+
+\subsection{Memory management}
+\label{sec:SLFMemoryManagement}
+\index{management!memory}\index{store!static}
+
+The present description does not yet discuss the management of
+heap-allocated objects.
+
+\paragraph{Objects.} On the one hand, it is desirable to have a
+fine-grained representation of the active store during specialization
+to enable memoization with high precision (e.g., the memoization
+algorithm may want to treat the members of a struct as separate
+objects, so that it can memoize only the members that are actually
+in use at a given program point).
+
+On the other hand, each object must be registered somewhere, so it is
+desirable to have as coarse-grained representation as possible to
+minimize the storage overhead.
+
+We believe that this stage of the implementation calls for simplicity,
+so we choose a relatively coarse-grained representation: The storage
+that is allocated by the ``execution'' of a (static) declaration is
+perceived as one object. This implies, for instance, that all elements of
+an array are treated together.
+
+At specialization time a static object is thus allocated by the
+``execution'' of a declaration. Global declarations are executed at startup
+and local declarations are executed when the function they appear in is
+entered. Due to recursive calls one local declaration may thus give rise to
+several  objects that are allocated at different locations on the
+stack at a given time.
+
+At specialization time we need to keep some book-keeping information
+for each object. We shall refer to this as \emph{the object
+description} and as the C++ class $\TDataObject$_{DataObject@$\TDataObject$}.
+
+\paragraph{Copies of Objects.} Since the operations needed
+for objects in the active store are different from those needed for copies,
+we distinguish between the two kinds of objects. The book-keeping
+information for a copied object is referred to as \emph{the description of
+  a copied object} or as the C++ class
+$\TDataObjectCopy$_{DataObjectCopy@$\TDataObjectCopy$}.
+
+
+\subsubsection{Memory management functions and data structures}
+In general, we need to make three operations available on objects:
+\begin{center}\def\arraystretch{1.2}
+{\setbox0=\hbox{$\Tint\ \Fcmp(\TDataObject\ *\Vobj,\ \TDataObjectCopy
+  *\Vcpy)$}
+\newdimen\commentwidth\commentwidth=-\wd0
+\advance\commentwidth by .9\textwidth
+\ifdim\commentwidth<5em\commentwidth=5em\fi
+\begin{tabular}{lp{\commentwidth}}
+$\TDataObjectCopy\ {*}\Fcopy(\TDataObject\ {*}\Vobj)$
+&
+copies the object described by $\Vobj$ and
+returns a description of the copied object.
+\\
+$\Tvoid\ \Frestore(\TDataObjectCopy\ {*}\Vcpy)$
+&
+takes a description
+of a copy and restores it to its original location.
+This requires that the original
+location of the object must be part of the description of the copied
+object\footnotemark
+\\
+$\Tbool\ \Fcmp(\TDataObject\ *\Vobj,\ \TDataObjectCopy *\Vcpy)$
+&
+compares an object in the active
+store ($\Vobj$) with a copied object ($\Vcpy$),  returning true
+if they match, false otherwise.
+\end{tabular}\footnotetext{Alternatively, the restore function could take the
+  description of the original object as parameter, thus reducing the
+  memory overhead in the object description, but this makes it more
+  complicated to use the $\Frestore$ function}}
+\end{center}
+
+The C++ data structures that describe an object and a copy of an object 
+must contain the following fields:
+\begin{center}\def\arraystretch{1.1}
+\begin{tabular}{|l|l|}\hline
+\hfil $\TDataObject$        & \hfil $\TDataObjectCopy$ \\\hline
+A pointer to the object           & A pointer to the original 
+                                    location of the copy \\
+                                  & A pointer to the copy \\
+The size of the object            & The size of the copy \\
+A pointer to its copy function    & \\
+A pointer to its compare function & \\\hline
+\end{tabular}
+\end{center}
+The first two fields are specific to the object, whereas the rest are
+specific to the declaration (type) of the object.  
+%The visit flag is used to mark already processed objects, thus avoiding
+%infinite looping on cyclic data-structures when doing a recursive copy.
+
+The size can be hard-coded (generated) into the copy and compare
+functions, and the two functions can be joined into a general function
+which takes an extra argument specifying whether it should copy or
+compare, but we leave this for future optimizations.
+
+Note that the original location is only needed for restoring
+and not for comparing.
+
+The data structure used when copying an object must in fact contain
+copies of several objects, because if the object contains a pointer,
+we must also copy whatever object it points to. This data structure must
+support restoring and comparing. Restoring of the state does not
+require the copied objects to be structured in any way, since it
+amounts to restoring all copied objects. Comparing is a bit more
+difficult, since we must make sure that the right objects are compared
+to the right copies.
+
+We thus arrange the copied objects in a list where the copy of an
+object comes immediately before the copies of the objects it
+references. This list structure incurs an overhead of two pointers per
+copied object. Alternatively, we could use an array of references to
+objects, which would reduce the overhead to one pointer per object,
+but at the same time it complicates the implementation, because the
+number of elements is unknown when the copying begins. Another
+possibility is to store the copied objects contiguously in memory,
+which does not involve any overhead, but it also complicates the
+implementation and makes it difficult to share identical copies. For
+simplicity we have chosen to use a list, and leave trimming of the
+memory usage to the future.
+
+\subsubsection{The Standard and Pointers} Four rules from the Standard
+are important to note when dealing with pointers:
+
+\begin{enumerate}
+\item \label{item-array} Strictly conforming \ansiC allows pointer
+arithmetic to move a pointer around inside the same array, and to move
+it one past the last element of the array.
+\item It is guaranteed that a pointer to an object may be converted to
+a pointer to an object whose type requires less or equally strict
+storage alignment and back again without change.
+\item\label{rule-first-member} If a pointer to a structure is cast
+to the type of a pointer to its first member, the result refers to the
+first member.
+\item A cast of a pointer to an integral type\footnote{Types {\tt
+char}, and {\tt int} of all sizes, each with or without sign, and also
+enumerations types, are collectively called \emph{integral}
+types.~\cite{Kernighan:1988:CProgrammingLanguage}.} or vice versa is implementation
+defined and therefore not strictly conforming to the Standard.
+\end{enumerate}
+The first rule implies that it may be necessary to copy an
+entire array when a pointer refers to it. The second rule means that
+the type of the pointer may not be sufficient to determine how many
+bytes to copy (due to casts). The third rule implies that it may be
+necessary to copy the entire struct when copying a pointer to the
+first element of the struct. Finally, the fourth rule drastically
+limits the number of objects a pointer may point to. Without the forth
+rule we would have to copy the entire store in the worst case.
+
+\cmix allows a pointer to an object to be cast to another pointer to an
+object, as long as the level of indirection remains unchanged, whereas
+other casts from or to pointers are residualized, cf.\ 
+Section~\vref{sec:BTAExpressions}. This implies that a cast of a pointer to
+an integral type or vice versa is made dynamic by \cmix.
+
+
+\subsubsection{Type specific memory management functions}
+\label{sec:TypeSpecificMemoryFunctions}
+
+We now consider each C type in turn to see what is
+required to implement memory management support for objects of that
+particular type.
+
+We divide the types into \emph{arithmetic} (char, int, float, double,
+enumerations, and derived forms; i.e., signed, unsigned, short, long),
+\emph{function pointers}, \emph{pointers to objects}, \emph{structs},
+\emph{unions}, and \emph{arrays}.
+
+
+\paragraph{Arithmetic Types}\label{sec:SLFArithmeticTypes}
+ are easy:~given a variable $x$ of type $T$,
+we simply copy $\Fsizeof(T)$ bytes starting at $\&x$. 
+Comparing is equally simple. 
+
+Thus, the specialization library must contain two functions for
+copying and comparing simple objects:
+\[
+\begin{array}{rl}
+\TDataObjectCopy & \FcopySimple(\TDataObject\ *\Vobj); \\
+\Tbool & \FcmpSimple(\TDataObject\ *\Vobj, \TDataObjectCopy\ *\Vcpy); 
+\end{array}
+\]
+
+\paragraph{Function
+  Pointers}\label{sec:SLFFunctionPointers}\index{pointer!function}
+can be treated in exactly the same manner as arithmetic types. The
+referenced function cannot change, and therefore there is no need to copy
+it.
+
+\paragraph{Pointers to Objects}
+\label{sec:PointersToObjects}
+\index{pointer!object}
+
+In this section we describe how we at specialization time can
+determine exactly which object a given pointer refers to.
+
+Consider a static pointer \texttt{p}. If \texttt{p} points to dynamic
+data, we simply copy the pointer. If, however, \texttt{p} is a pointer
+to static data, we must also copy what it points to. In general it is
+not sufficient just to copy the integer \texttt{*p}, though, since
+other addresses may be referenced as well, either via pointer
+arithmetic or via casts.
+
+If \texttt{p} refers to an element of an array, then we must copy the
+entire array. This implies that the copy function must know the size
+of the array.
+
+When we later during the specialization compare the memoized array
+with a new array referenced by \texttt{p}, the new array may be of
+another size, so before comparing the two their sizes must be found to
+match.  However, this is still not sufficient:~it could be the case
+that the pointers match and the referenced arrays match, but the
+offset of the pointers into the arrays differ, as in this example with a
+4-element array:
+\begin{center}
+  \begin{tabular}{l|c|r}\cline{2-2}
+    "0x4020": & 42 \\\cline{2-2}
+    "0x4016": & 17 \\\cline{2-2}
+    "0x4012": & 42 & $<--$"p" \\\cline{2-2}
+    "0x4008": & 17 \\\cline{2-2}
+    \mc{1}{l}{"0x4004":} & \mc{1}{c}{--} \\
+    \mc{1}{l}{"0x4000":} & \mc{1}{c}{--} \\
+  \end{tabular}
+\hfil
+  \begin{tabular}{l|c|r}
+    \mc{1}{l}{"0x4020":} & \mc{1}{c}{--} \\
+    \mc{1}{l}{"0x4016":} & \mc{1}{c}{--} \\\cline{2-2}
+    "0x4012": & 42 & $<--$"p" \\\cline{2-2}
+    "0x4008": & 17 \\\cline{2-2}
+    "0x4004": & 42 \\\cline{2-2}
+    "0x4000": & 17 \\\cline{2-2}
+  \end{tabular}
+\end{center}
+In this case, the two states should not compare equal; hence the offset
+of of a pointer into an array must be memoized as well.
+Similar considerations apply to pointers to structs: we must copy the
+entire struct and the pointer's offset relative to the start address
+of the struct.
+This way, what we later compare are not the absolute
+locations_{location!absolute}, but the \emph{structure} of the
+data_{data!structure of}.
+
+When copying a pointer $p$ at specialization time we therefore examine
+each object in turn to determine whether or not $p$ may refer to it.
+One could take an offline approach, and memoize all objects that a
+pointer may point to as reported by the pointer analysis. However, we
+fear that this would be overly conservative. For example, the pointer
+analysis does not distinguish between different objects allocated by
+the same declaration, and it is non-trivial to extend it to do so.
+
+If a pointer points to an array, then it may point one past the last
+element of the array (cf.\ Rule~\vref{item-array}). This implies that
+we are not able to determine whether a pointer refers to an array or
+the object allocated right after the array. A safe approximation would
+be to copy both objects, but this may give redundant specialization,
+it may waste storage, and it complicates the comparison algorithm, so
+to avoid ambiguities we \emph{increase the size of all static arrays
+  by one prior to specialization_{array!length!increasing}.} Since the
+original program is strictly conforming to the Standard then we know
+that pointer arithmetic will only move pointers around inside the
+slightly larger arrays and never outside any. The only exceptions are
+expressions like "sizeof(a)" where "a" is an array; in this case we
+transform it into "(sizeof(a) - sizeof(a[0]))".
+
+Now it is the case that a (non-function) object $x$ is referenced by
+pointer $p$ if $\&x =< p < \&x + \Fsize(x)$.
+%The following condition determines whether $p$ may refer
+%to the object:
+%\begin{center}
+%\begin{tabular}{ll}
+% \emph{Object $x$ of type} & \emph{is referenced by pointer $p$ if} \\[.8ex]
+% arithmetic & $\&x = p$ \\
+% pointer    & $\&x = p$ \\
+% struct     & $\&x =< p < \&x + \Fsize(x)$ \\
+% union      & $\&x =< p < \&x + \Fsize(x)$ \\
+% array      & $\&x =< p < \&x + \Fsize(x)$
+%\end{tabular}
+%\end{center}
+As mentioned above, pointers to functions do not require any object to be
+copied.
+
+Thus, the specialization library must contain two functions for copying and
+comparing a referenced object and the offset of the reference (i.e.\ $p -
+\&x$)%
+_{copyWithOffset@$\FcopyWithOffset$}%
+_{cmpWithOffset@$\FcmpWithOffset$}:
+\[
+\begin{array}{rl}
+\TDataObjectCopy & \FcopyWithOffset(\TDataObject\ {*}\Vobj,\ \Tvoid\
+{*}\Vref); \\
+\Tbool & \FcmpWithOffset(\TDataObject\ {*}\Vobj,\ \TDataObjectCopy\
+{*}\Vcpy,\ \Tvoid\ {*}\Vref); \\
+\end{array}
+\]
+
+\paragraph{Pointers to Strings.} The Standard specifies that the
+behavior of a program that attempts to alter a string literal is
+undefined. This implies that string literals need not be copied.
+ 
+\paragraph{Extern Pointers.} Since the binding-time analysis of C-Mix
+residualizes all external pointers, the object referred to by a static
+pointer will always stem from a static declaration in the program.
+
+
+\paragraph{Structs}
+\label{sec:SLFStructs}\index{struct!static!memoizing}
+are copied like arithmetic types by copying $\Fsize(x)$
+bytes starting at $\&x$, but additionally, if the struct contains
+pointers then we must also recursively copy objects referenced by
+pointers in the struct.
+
+Since the static data is represented directly in the generating extension,
+all we have is a void pointer to a collection of bytes inside which one or
+more pointers are ``hidden''. The simplest way to extract the pointers is
+to cast the void pointer to a pointer of the appropriate struct type. To
+this end we generate \emph{type-specific copy and compare
+  functions}_{function!copy!type specific}_{function!copy!struct}%
+_{function!compare!type specific}_{function!compare!struct} for each
+user defined type in use by the static objects~\cite[Section
+3.10.4]{Andersen:1994:ProgramAnalysisAndSpecialization}.  These functions
+are generated in the gegen phase, prior to specialization, and added to the
+generating extension.
+
+\begin{example}[Copying structs]
+\index{struct!static!memoizing}
+\label{exm:StructCopy}
+Suppose the subject program contains a static variable of  type
+"struct U":
+\begin{verbatim}
+struct T { int a; int *p; };
+struct U { int *q; struct T t[42]; };
+\end{verbatim}
+When copying an object of type "struct U" with object
+description "obj", the function first copies the struct itself,
+then it casts the void pointer denoting the location of the object
+"obj->loc" to a "struct U" pointer, and extracts the 42 pointers
+from it:
+\begin{verbatim}
+DataObjectCopy *copy_struct_U(DataObject *obj, void *ref) {
+  if (obj->visit) return NULL;
+
+  DataObjectCopy *copy = copyWithOffset(obj, ref);   /* Copy struct U itself */
+
+  struct U *pu = (struct U *) (obj->loc);            /* Copy any referenced objects */
+  copy = append(copy, copyReferencedObject(pu->q));
+  for (i = 0; i < 42; i++) {
+    struct T *pt = &(pu->t[i]);
+    copy = append(copy, copyReferencedObject(pt->p));
+  }
+  return copy;
+}
+\end{verbatim}
+The compare function will simply compare the copied objects in the
+same order:
+\begin{verbatim}
+bool cmp_struct_U(DataObject *obj, DataObjectCopy *copy, void *ref) {
+  if (obj->visit) return true;
+
+  if (!cmpWithOffset(obj, copy, ref)) return false; /* Compare struct U itself */
+
+  struct U *pu = (struct U *) (obj->loc);           /* Compare any referenced objects */
+  if (!cmpReferencedObject(pu->q, copy)) return false;
+  for (i = 0; i < 42; i++) {
+    struct T *pt = &(pu->t[i]);
+    if (!cmpReferencedObject(pt->p, copy)) return false;
+  }
+  return true;
+}
+\end{verbatim}
+Note that no copy or compare functions are generated for "struct T"
+unless a static variable is declared with this type.
+\end{example}
+
+
+The copy and compare functions are generated by inserting a list of
+transformations $\gegen{u_{i_1}}_{\Vcopy}$; \ldots
+; $\gegen{u_{i_g}}_{\Vcopy}$; \ldots;
+$\gegen{u_{i_1}}_{\Vcmp}$; \ldots
+; $\gegen{u_{i_g}}_{\Vcmp}$ after transforming the user defined types
+in Figure~\vref{fig:GEGENPrograms}. This is only done for those user types
+$u_{i_1}, ..., u_{i_g}$ for which variable declarations exist. These
+transformations_{<.>copy@$\gegen{\cdot}_{\Vcopy}$}%
+_{<.>cmp@$\gegen{\cdot}_{\Vcmp}$}_{<.>@$\gegen{\cdot}$} are defined in
+Figures~\ref{fig:SLFUserTypesCopyFun}
+and~\ref{fig:SLFUserTypesCompareFun}%
+_{copys@$\Fcopy_{\sigma}$}_{cmps@$\Fcmp_{\sigma}$}.
+\begin{figure}[htbp]
+  \begin{center}
+    \small
+    \[\def\arraystretch{1.2}
+    \begin{array}{@{}lcl@{}}
+      \gegen{(\sigma, \Void, \CStruct_s, d_1... d_n)}_{\Vcopy} &
+      =& \TDataObjectCopy\ \widehat{\Fcopy_{\sigma}}
+           (\TDataObject\ {*}\Vobj, \Tvoid\ {*}\Vref)\ \{ \\
+      && \quad \Kif\ \Fvisited(\Vobj)\ \Kthen\ \Kreturn\ [] \\
+      && \quad \Vcopy
+               := \FcopyWithOffset(\Vobj, \Vref) \\
+      && \quad \Tstruct\ \Void_{\sigma}\ *\widehat{x} 
+               := (\Tstruct\ \Void_{\sigma}*)\Fobject(\Vobj) \\
+      && \quad \gegen*{(*x), d_1}_{\Vcopy}; ...; 
+               \gegen*{(*x), d_n}_{\Vcopy}\\
+      && \quad \Kreturn\ \Vcopy \\
+      && \} \\
+      \gegen{(\sigma, \Void, \CStruct_d, d_1... d_n)}_{\Vcopy} &
+      =& \mbox{---}
+      \\
+      \gegen{(\sigma, \Void, \CUnion_s, d_1... d_n)}_{\Vcopy} &
+      =& \TDataObjectCopy\ \widehat{\Fcopy_{\sigma}}
+           (\TDataObject\ {*}\Vobj, \Tvoid\ {*}\Vref)\ \{ \\
+      && \quad \Kif\ \Fvisited(\Vobj)\ \Kthen\ \Kreturn\ [] \\
+      && \quad \Vcopy
+               := \FcopyWithOffset(\Vobj, \Vref) \\
+      && \quad \Tstruct\ \Void_{\sigma}\ *\widehat{x} 
+               := (\Tstruct\ \Void_{\sigma}*)\Fobject(\Vobj) \\
+      && \quad \gegen*{(*x), d_1}_{\Vcopy} \\
+      && \quad \Kreturn\ \Vcopy \\
+      && \} \\
+      \gegen{(\sigma, \Void, \CUnion_d, d_1... d_n)}_{\Vcopy} &
+      =& \mbox{---}\\[1em]
+      \gegen*{x, \CStructMem(\delta, \Void, t_s^s, \Voc)}_{\Vcopy} &
+      =& \mbox{---}
+      \\
+      \gegen*{x, \CStructMem(\delta, \Void, 
+        \CPointer_s^s(q, t), \Voc)}_{\Vcopy} &
+      =& \Vcopy := \Vcopy \append \FcopyReferencedObject(x.\Void)
+      \\
+      \gegen*{x, \CStructMem(\delta, \Void, 
+        \CPointer_s^d(q, t), \Voc)}_{\Vcopy} &
+      =& \mbox{---}
+      \\
+      \gegen*{x, \CStructMem(\delta, \Void, 
+        \CArray_s^s(q, t, e), \Voc)}_{\Vcopy} &
+      =& \gegen*{x.{\Void}, [e], t}_{\Vcopy}
+      \\
+%      \gegen*{ 
+%        \CStructMem(\delta, \Void, 
+%                    \CFunT(q, t, t_1 ... t_n), \Voc)}_{\Vcopy} &
+%      =& \Kerror
+%      \\
+      \gegen*{x, \CStructMem(
+        \begin{array}[t]{@{}l@{}}
+          \delta, \Void, \\
+          \CUser_s^s(q, \sigma, \CStruct, d_1 ... d_n),
+          \Voc)}_{\Vcopy} 
+      \end{array} &
+      =& \gegen*{x.\Void_{d_1}, d_1}_{\Vcopy}; ...; 
+         \gegen*{x.\Void_{d_n}, d_n}_{\Vcopy}
+      \\
+      \gegen*{x, \CStructMem(
+        \begin{array}[t]{@{}l@{}}
+          \delta, \Void, \\
+          \CUser_s^s(q, \sigma, \CUnion, d_1 ... d_n), \Voc)}_{\Vcopy}
+      \end{array} &
+      =& \gegen*{x.\Void_{d_1}, d_1}_{\Vcopy}
+      \\
+      \gegen*{x, \CStructMem(\delta, \Void, 
+        \CAbstract(q, \Vid), \Voc)}_{\Vcopy} &
+      =& ???
+      \\[1ex]
+      \gegen*{x, \Vms,  t_s^s}_{\Vcopy} &
+      =& \mbox{---}
+      \\
+      \gegen*{x, \Vms, \CPointer_s^s(q, t_d)}_{\Vcopy} &
+      =& \Kfor\ (i_1, ..., i_k) \in 
+           \{0, ..., m_1\} \x \cdots \x \{0, ..., m_k\}\ \Kdo\\
+      && \quad \Vcopy := \Vcopy \append 
+           \FcopyReferencedObject(x[i_1]\cdots[i_k])
+      \\
+      \gegen*{x, \Vms, \CPointer_s^d(q, t)}_{\Vcopy} &
+      =& \mbox{---}
+      \\
+      \gegen*{x, \Vms, \CArray_s^s(q, t, e)}_{\Vcopy} &
+      =& \gegen*{x, [m_1, ..., m_k,e], t}_{\Vcopy}
+      \\
+%      \gegen*{ 
+%        \Vms, \delta, \Void, \CFunT(q, t, t_1 ... t_n), \Voc}_{\Vcopy} &
+%      =& \Kerror
+%      \\
+      \gegen*{x, \Vms, 
+          \CUser_s^s(q, \sigma, \CStruct, d_1 ... d_n)}_{\Vcopy} &
+      =& \Kfor\ (i_1, ..., i_k) \in 
+           \{0, ..., m_1\} \x \cdots \x \{0, ..., m_k\}\ \Kdo\\
+      && \quad \Tstruct\ \Void_{\sigma}\ *\widehat{x'} 
+         := \&(x[i_1]\cdots[i_k]) \\
+      && \quad \gegen*{x'->\Void_{d_1}, d_1}_{\Vcopy}; ...; 
+               \gegen*{x'->\Void_{d_n}, d_n}_{\Vcopy}
+      \\
+      \gegen*{x, \Vms, 
+          \CUser_s^s(q, \sigma, \CUnion, d_1 ... d_n)}_{\Vcopy} &
+      =& \Kfor\ (i_1, ..., i_k) \in 
+           \{0, ..., m_1\} \x \cdots \x \{0, ..., m_k\}\ \Kdo\\
+      && \quad \Tstruct\ \Void_{\sigma}\ *\widehat{x'} 
+         := \&(x[i_1]\cdots[i_k]) \\
+      && \quad \gegen*{x'->\Void_{d_1}, d_1}_{\Vcopy}
+      \\
+      \gegen*{x, \Vms, \CAbstract(q, \Vid)}_{\Vcopy} &
+      =&
+    \end{array}
+    \]
+    \caption{Adding copy functions for user defined type to the gegen
+      transformation}
+    \label{fig:SLFUserTypesCopyFun}
+  \end{center}
+\end{figure}
+
+\begin{figure}[htbp]
+  \begin{center}
+    \small
+    \[\def\arraystretch{1.2}
+    \begin{array}{@{}lcl@{}}
+      \gegen{(\sigma, \Void, \CStruct_s, d_1... d_n)}_{\Vcmp} &
+      =& \Tbool\ \widehat{\Fcmp_{\sigma}}
+          (\begin{array}[t]{@{}l@{}}
+             \TDataObject\ {*}\Vobj, \\
+             \TDataObjectCopy\ {*}\Vcpy, \Tvoid\ {*}\Vref)\ \{ 
+           \end{array}\\
+      && \quad \Kif\ \Fvisited(\Vobj)\ \Kthen\ \Kreturn\ \Ctrue \\
+      && \quad \Kif\ \Fnot(\FcmpWithOffset(\Vobj, \Vcpy, \Vref))\
+               \Kthen\\
+      && \qquad \Kreturn\ \Cfalse \\
+      && \quad \Tstruct\ \Void_{\sigma}\ *\widehat{x} 
+               := (\Tstruct\ \Void_{\sigma}*)\Fobject(\Vobj) \\
+      && \quad \gegen*{(*x), d_1}_{\Vcmp}; ...; 
+               \gegen*{(*x), d_n}_{\Vcmp}\\
+      && \quad \Kreturn\ \Ctrue \\
+      && \} \\
+      \gegen{(\sigma, \Void, \CStruct_d, d_1... d_n)}_{\Vcmp} &
+      =& \mbox{---}
+      \\
+      \gegen{(\sigma, \Void, \CUnion_s, d_1... d_n)}_{\Vcmp} &
+      =& \Tbool\ \widehat{\Fcmp_{\sigma}}
+          (\begin{array}[t]{@{}l@{}}
+             \TDataObject\ {*}\Vobj, \\
+             \TDataObjectCopy\ {*}\Vcpy, \Tvoid\ {*}\Vref)\ \{ 
+           \end{array}\\
+      && \quad \Kif\ \Fvisited(\Vobj)\ \Kthen\ \Kreturn\ \Ctrue \\
+      && \quad \Kif\ \Fnot(\FcmpWithOffset(\Vobj, \Vcpy, \Vref))\
+               \Kthen\\
+      && \qquad \Kreturn\ \Cfalse \\
+      && \quad \Tstruct\ \Void_{\sigma}\ *\widehat{x} 
+               := (\Tstruct\ \Void_{\sigma}*)\Fobject(\Vobj) \\
+      && \quad \gegen*{(*x), d_1}_{\Vcmp}\\
+      && \quad \Kreturn\ \Ctrue \\
+      && \} \\
+      \gegen{(\sigma, \Void, \CUnion_d, d_1... d_n)}_{\Vcmp} &
+      =& \mbox{---}\\[1em]
+      \gegen*{x, \CStructMem(\delta, \Void, t_s^s, \Voc)}_{\Vcmp} &
+      =& \mbox{---}
+      \\
+      \gegen*{x, \CStructMem(\delta, \Void, 
+        \CPointer_s^s(q, t), \Voc)}_{\Vcmp} &
+      =& \Kif\ \Fnot(\FcmpReferencedObject(x.\Void, \Vcpy))\ \Kthen\\
+      && \quad \Kreturn\ \Cfalse
+      \\
+      \gegen*{x, \CStructMem(\delta, \Void, 
+        \CPointer_s^d(q, t), \Voc)}_{\Vcmp} &
+      =& \mbox{---}
+      \\
+      \gegen*{x, \CStructMem(\delta, \Void, 
+        \CArray_s^s(q, t, e), \Voc)}_{\Vcmp} &
+      =& \gegen*{x.{\Void}, [e], t}_{\Vcmp}
+      \\
+%      \gegen*{ 
+%        \CStructMem(\delta, \Void, 
+%                    \CFunT(q, t, t_1 ... t_n), \Voc)}_{\Vcmp} &
+%      =& \Kerror
+%      \\
+      \gegen*{x, \CStructMem(
+        \begin{array}[t]{@{}l@{}}
+          \delta, \Void, \\
+          \CUser_s^s(q, \sigma, \CStruct, d_1 ... d_n), \Voc)}_{\Vcmp}
+      \end{array} &
+      =& \gegen*{x.\Void_{d_1}, d_1}_{\Vcmp}; ...;
+         \gegen*{x.\Void_{d_n}, d_n}_{\Vcmp}
+      \\
+      \gegen*{x, \CStructMem(
+        \begin{array}[t]{@{}l@{}}
+          \delta, \Void, \\
+          \CUser_s^s(q, \sigma, \CUnion, d_1 ... d_n), \Voc)}_{\Vcmp}
+      \end{array} &
+      =& \gegen*{x.\Void_{d_1}, d_1}_{\Vcmp}
+      \\
+      \gegen*{x, \CStructMem(\delta, \Void, 
+        \CAbstract(q, \Vid), \Voc)}_{\Vcmp} &
+      =& ???
+      \\[1ex]
+      \gegen*{x, \Vms, t_s^s}_{\Vcmp} &
+      =& \mbox{---}
+      \\
+      \gegen*{x, \Vms, \CPointer_s^s(q, t_d)}_{\Vcmp} &
+      =& \Kfor\ (i_1, ..., i_k) \in 
+           \{0, ..., m_1\} \x \cdots \x \{0, ..., m_k\}\ \Kdo\\
+      && \quad \Kif\ \Fnot
+          (\FcmpReferencedObject(x[i_1]\cdots[i_k], \Vcpy))\
+         \Kthen\\
+      && \qquad \Kreturn\ \Cfalse
+      \\
+      \gegen*{x, \Vms, \CPointer_s^d(q, t)}_{\Vcmp} &
+      =& \mbox{---}
+      \\
+      \gegen*{x, \Vms, \CArray_s^s(q, t, e)}_{\Vcmp} &
+      =& \gegen*{x, [m_1, ..., m_k,e], t}_{\Vcmp}
+      \\
+%      \gegen*{ 
+%        \Vms, \delta, \Void, \CFunT(q, t, t_1 ... t_n), \Voc}_{\Vcmp} &
+%      =& \Kerror
+%      \\
+      \gegen*{x, \Vms, 
+          \CUser_s^s(q, \sigma, \CStruct, d_1 ... d_n)}_{\Vcmp} &
+      =& \Kfor\ (i_1, ..., i_k) \in 
+           \{0, ..., m_1\} \x \cdots \x \{0, ..., m_k\}\ \Kdo\\
+      && \quad \Tstruct\ \Void_{\sigma}\ *\widehat{x'} 
+         := \&(x[i_1]\cdots[i_k]) \\
+      && \quad \gegen*{x'->\Void_{d_1}, d_1}_{\Vcmp}; ...; 
+               \gegen*{x'->\Void_{d_n}, d_n}_{\Vcmp}
+      \\
+      \gegen*{x, \Vms, 
+          \CUser_s^s(q, \sigma, \CUnion, d_1 ... d_n)}_{\Vcmp} &
+      =& \Kfor\ (i_1, ..., i_k) \in 
+           \{0, ..., m_1\} \x \cdots \x \{0, ..., m_k\}\ \Kdo\\
+      && \quad \Tstruct\ \Void_{\sigma}\ *\widehat{x'} 
+         := \&(x[i_1]\cdots[i_k]) \\
+      && \quad \gegen*{x'->\Void_{d_1}, d_1}_{\Vcmp}
+      \\
+      \gegen*{x, \Vms, \CAbstract(q, \Vid)}_{\Vcmp} &
+      =& ???
+    \end{array}
+    \]
+    \caption{Adding compare functions for user defined type to the gegen
+      transformation}
+    \label{fig:SLFUserTypesCompareFun}
+  \end{center}
+\end{figure}
+
+
+\paragraph{Unions}\index{union!static!memoizing}
+are a bit more tricky, since a member of pointer type might
+share storage with other members. Consider  the following
+union:
+\begin{verbatim}
+union U { int a; double x; int *p; } u;
+\end{verbatim}
+In general the Standard does not allow a member of a union
+to be inspected unless the value of the union has been assigned using
+that same member. The exception from the rule is that ``if a union
+contains several structures that share a common initial sequence, and
+if the union currently contains one of these structures, it is
+permitted to refer to the common initial part of any of the contained
+structures'' (an example can be found in
+\cite[p.~214]{Kernighan:1988:CProgrammingLanguage}). Thus, when we
+want to perform the memoizing, we can copy "u" itself, but we do not
+know how to interpret the data: as an int, double or pointer?
+
+Two possible ways of handling unions are:
+
+\begin{enumerate}
+\item[1.] keeping track of which members are the currently valid, or
+\item[2.] splitting the union, so that members of pointer type are
+allocated at private memory locations (keeping in mind the exception
+mentioned above).
+\end{enumerate}
+
+\noindent The first approach should be avoided since it conflicts with
+the idea directly representing static objects in the generating extension.
+The second approach can be implemented with some storage overhead, but to
+keep things simple, we will instead make a restriction for the present
+version of \cmix:
+\begin{constraint}[Unions]\index{union!static!constraint on}%
+\index{constraint!union!static}%
+\label{cns:SLFUnion}
+In static unions, pointers to static data are only allowed if the
+union exclusively contains structures, and then only in the initial
+part that is common for \emph{all} the structures\footnote{Recall
+  from Seciton~\ref{sec:BTAUnions} that the binding times of the
+  members that are in an intial common part for two or more struct
+  members must be identical.}.
+\end{constraint}
+This implies that pointers "u.t1.pt1" and "u.t2.pt2", but not pointer
+"u.t1.qt" in this example can become pointers to static data:
+\begin{verbatim}
+struct T1 { int tag1; struct T *pt1; struct T *qt; };
+struct T2 { int tag2; struct T *pt2; };
+union U { struct T1 t1; struct T2 t2; } u;
+\end{verbatim}
+Note also that pointers "u.p" and "u.q" in this example can \emph{not}
+become pointers to static data because they are not contained in
+structs:
+\begin{verbatim}
+union U { int *p; int *q; } u;
+\end{verbatim}
+Most programs that do not satisfy this restriction can be rewritten to 
+do so.
+
+\paragraph{Arrays}\index{array!static!memoizing}
+\label{sec-arrays}
+are handled similarly to structs. If an array contains
+pointers to static data then the referenced objects must be copied as
+well as the array itself.
+
+The type-specific copy and compare functions for arrays
+containing pointers to static data are also placed in the generating
+extension by gegen transformations shown in
+Figure~\ref{fig:SLFArrayCopyCmpFun}.
+\begin{figure}[htb]
+  \begin{center}
+    \small
+    \[\def\arraystretch{1.2}
+    \begin{array}{@{}lcl@{}}
+      \gegen{t' == \CArray_s^s(q, t, e)}_{\Vcopy} &
+      =& \TDataObjectCopy\ \widehat{\Fcopy_{t'}}
+        (\TDataObject\ {*}\Vobj, \Tvoid\ {*}\Vref)\ \{ \\
+      && \quad \Kif\ \Fvisited(\Vobj)\ \Kthen\ \Kreturn\ [] \\
+      && \quad \Vcopy := \FcopyWithOffset(\Vobj, \Vref) \\
+      && \quad t'\ {*}\widehat{x} := (t'*)\Fobject(\Vobj) \\
+      && \quad \gegen*{x,[e],t}_{\Vcopy} \\
+      && \}
+      \\[1em]
+      \gegen{t' == \CArray_s^s(q, t, e)}_{\Vcmp} &
+      =& \Tbool\ \widehat{\Fcmp_{t'}}
+        (\TDataObject\ {*}\Vobj, \TDataObjectCopy\ {*}\Vcpy,
+         \Tvoid\ {*}\Vref)\ \{ \\
+      && \quad \Kif\ \Fvisited(\Vobj)\ \Kthen\ \Kreturn\ \Ctrue \\
+      && \quad \Kif\ \Fnot(\FcmpWithOffset(\Vobj, \Vcpy, \Vref)\
+                \Kthen\ \Kreturn\ \Cfalse\\
+      && \quad t'\ {*}\widehat{x} := (t'*)\Fobject(\Vobj) \\
+      && \quad \gegen*{x,[e],t}_{\Vcmp} \\
+      && \quad \Kreturn\ \Ctrue \\
+      && \}
+    \end{array}
+    \]
+    \caption{Adding copy and compare functions for array types to the
+      gegen transformation}
+    \label{fig:SLFArrayCopyCmpFun}
+  \end{center}
+\end{figure}
+
+
+\subsection{Memoization functions}
+\label{sec:SLFMemoizationFunctions}
+\index{set!pending}\index{memoization}
+
+The generating extension as described in
+Section~\ref{sec:GeneratingTheGeneratingExtension} makes use of several
+functions for maintaining a set of pending specialization points:
+\begin{description}
+\item[{$[\cdot] : \DLabel -> \DResidualLabel$}]_{[.]@$[\cdot]$} 
+  Calls $\FpendInsert$ with the current state.
+\item[$\FpendInsert:\DLabel \x \DState ->
+  \DResidualLabel$.]_{pendInsert@$\FpendInsert$} When a program
+  point_{point!program} $p$ represented by a label in the generating
+  extension is to be memoized with respect to the current state $S$,
+  $\FpendInsert$ generates a fresh label $l$ for the residual program and
+  inserts a tuple $(p,S,l)$ called a \emph{specialization
+    point}_{point!specialization} into the pending set, along with a copy,
+  $\sigma$, of the part of the active store that is reachable from $S$.
+\item[$\Fpending:\Dvoid -> \Dbool$.]_{pending@$\Fpending$}
+  Checks whether there are any specialization
+  points_{point!specialization!pending} waiting to be specialized.
+\item[$\FpopSP : \Dvoid -> (\DProgramPoint \x \DState \x
+  \DResidualLabel)$.]_{popSP@$\FpopSP$} Removes a pending specialization
+  point from the pending set and returns it.
+\item[$\Frestore:\DState -> \Dvoid$.]_{restore@$\Frestore$} Given a state,
+  $S$, $\Frestore(S)$ copies the static data $\sigma$ associated with $S$
+  to the active store.
+\item[$\Fcopy:\DState -> \DState$.]_{copy@$\Fcopy$} Given the current
+  state, $S$, $\Fcopy(S)$ returns a copy of it, along with the static
+  data $\sigma$ in the active store associated with $S$.
+\item[$\Fequal : \DState \x \DState$.]_{equal$\Fequal$} Given two states
+  $S_1, S_2$, $\Fequal(S_1, S_2)$ checks whether they are equal and whether the
+  static data reachable from them is equal.
+\end{description}
+During specialization of a function, \emph{two} sets of specialization
+points are maintained: the set of \emph{pending}
+ points_{set!specialization point!pending} and the set of
+\emph{processed} points_{set!specialization point!processed}. Whenever a
+specialization point is to be added to the pending set, we check whether it
+has already been processed, and if so, simply return the residual label
+associated with that specialization point_{memoization}. This way, residual 
+code sharing_{sharing!code} is obtained.
+
+There are some  opportunities for ``peephole''
+optimizations_{optimizations!peephole}: 
+\begin{itemize}
+\item The state consists of local (+parameter) variables and global
+  variables. In functions that perform no non-local side 
+  effects_{side effects}, we do not need to compare the global
+  variables. This can 
+  be implemented by passing an extra $\VsideEffects$ parameter to
+  $\FpendInsert$.
+\item Consider specializing a dynamic "if" statement, cf.\ 
+  Figure~\vref{fig:GEGENControlStatements}. If the current state has not
+  been seen before, the following happens:
+  \begin{enumerate}
+  \item The current state + label $l_1$ and the current state + label $l_2$ 
+    is added to the pending set, involving two copyings of the store
+  \item In the pending loop, a state is removed from the pending set,
+    involving a restoring of the store
+  \end{enumerate}
+  By observing that the static store is unchanged between these two
+  operations, we can skip the restoring in those cases where we remove a
+  specialization point we have just added. As store copying is one of the
+  most time-consuming operations during specialization, this can
+  potentially lead to a visible reduction of specialization time.
+  
+  This can be implemented by keeping a set of recently added specialization
+  points.
+\end{itemize}
+The function for inserting specialization points into the pending set
+is shown in Figure~\ref{fig:SLFpendInsert}.%
+\begin{figure}[htb]
+\begin{center}\leavevmode\hbox{\vbox{%
+\begin{pseudocode}
+  $\FpendInsert(\VpgenLabel, \Vstate, \VsideEffects) = {}$ \+\\
+    $\VpendSet := \Ftop(\VpendSetStack)$ \\
+    $\Kif\ \VsideEffects\ \Kthen$ \+\\
+      $\Kfor\ (p,S,l) \in \VpendSet\ \Kdo$ 
+      \> \hskip 15em $/*$ check the pending specialization points $*/$ \+\\
+        $\Kif\ p = \VpgenLabel \land \Fequal(S, \Vstate)\ \Kthen\
+          \Kreturn\ l$ \-\\
+      $\Kfor\ (p,S,l) \in \VprocessedSet\ \Kdo$ 
+      \> \hskip 15em $/*$ check the processed specialization points $*/$ \+\\
+        $\Kif\ p = \VpgenLabel \land \Fequal(S, \Vstate)\ \Kthen\
+          \Kreturn\ l$ \-\-\\
+    $\Kelse$ \+\\
+      $\Kfor\ (p,S,l) \in \VpendSet\ \Kdo$ 
+      \> \hskip 15em $/*$ check the pending specialization points $*/$ \+\\
+        $\Kif\ p = \VpgenLabel \land \FlocalEqual(S, \Vstate)\ \Kthen\
+          \Kreturn\ l$ \-\\
+      $\Kfor\ (p,S,l) \in \VprocessedSet\ \Kdo$ 
+      \> \hskip 15em $/*$ check the processed specialization points $*/$ \+\\
+        $\Kif\ p = \VpgenLabel \land \FlocalEqual(S, \Vstate)\ \Kthen\
+          \Kreturn\ l$ \-\-\\[1ex]
+    $\VresLabel := \FfreshResidLabel()$ 
+    \>\> \hskip 15em $/*$ the specialization point has not been seen before $*/$ \\
+    $\Kif\ \VsideEffects\ \Kthen$ \+\\
+      $\Vsp := (\VpgenLabel, \Fcopy(\Vstate), \VresLabel)$ \-\\
+    $\Kelse$ \+\\
+      $\Vsp := (\VpgenLabel, \FlocalCopy(\Vstate), \VresLabel)$ \-\\
+    $\Fadd(\VpendSet, \Vsp)$ \\
+    $\Fadd(\VrecentSet, \Vsp)$ \\
+    $\Kreturn\ \VresLabel$
+\end{pseudocode}}}
+    \caption{Specialization library function for inserting specialization points into the pending set }
+    \label{fig:SLFpendInsert}
+  \end{center}
+\end{figure}
+
+Functions $\Fpending$ and $\FpopSP$ are in fact always used together (in
+the pending loop_{loop!pending} of each generating
+function_{function!generating}, cf.\
+Figure~\vref{fig:GEGENFunctionsDynamic}), so
+they can be merged into one, that also
+takes care of restoring the state and emitting the residual
+label_{label!residual}, cf.\ Figure~\ref{fig:SLFpendingSP}.
+\begin{figure}[htb]
+\begin{center}\leavevmode\hbox{\vbox{%
+\begin{pseudocode}
+  $\FpendingSP() = {}$ \+\\
+    $\Kif\ \Ftop(\VpendSetStack) = \{\}\ \Kthen\ \Kreturn\ \CNull$ \\
+    $\Kif\ \VrecentSet \ne \{\}\ \Kthen$ \+\\
+      $\Vsp := \Fremove(\VrecentSet)$ \\                          
+      $(p,S,l) := \Fremove(\Vsp, \Ftop(\VpendSetStack))$ \-\\
+    $\Kelse$ \+\\
+      $(p,S,l) := \Fremove(\Ftop(\VpendSetStack))$ \\
+      $\Frestore(S)$ \-\\
+    $\VrecentSet := \{\}$ \\
+    $\Fadd(\VprocessedSet, (p,S,l))$ \\
+    $\emit{\bqt{l}":"}$ \\
+    $\Kreturn\ p$
+\end{pseudocode}}}
+    \caption{Specialization library function for finding a
+      specialization point in the pending set}
+    \label{fig:SLFpendingSP}
+  \end{center}
+\end{figure}
+
+
+\subsubsection{Sharing residual functions}
+
+Another form of code sharing in the residual program is obtained by
+sharing residual functions_{sharing!function} across several call
+sites.
+
+Due to non-local side effects_{side effect!non-local} during
+specialization, sharing of
+residual functions becomes complicated. Suppose we have
+specialized a function $f$ to the input state $s$ and the end state
+after $f$ is $e$. If we later during specialization encounter a call
+to $f$ with the same input store $s$, then we must generate a call to
+the 
+specialized function and restore the end 
+configuration_{end configuration!function} $e$ to mimic
+the effect of the static non-local side-effects in $f$.
+
+\paragraph{Functions Allocating Heap Storage.}_{allocation!heap}
+Recall that restoring a
+copied store means copying the data back to their original location in
+the store. This makes sharing of a function that allocates heap
+storage almost impossible, because the end configuration may refer to
+some memory allocations that are unavailable when a new call to the
+function is encountered.
+
+However, if the code subsequent to the allocation does not depend on
+the {\em location} of the allocated store, then restoring of a store
+is allowed to copy the heap allocated objects to a new location, so
+functions that allocate heap storage can be shared. Whether the code
+may depend on the location of an object can be determined by a special
+in-use analysis.
+
+Since we are not implementing such an analysis at this stage we will
+mark functions that allocate heap storage as unsharable.
+
+\paragraph{Functions Deallocating Heap Storage.}_{deallocation!heap} A
+function that
+deallocates heap storage can be shared provided that the memoization
+algorithm also keeps a record of which objects are deallocated.
+
+Since calls to functions that may refer to a heap-allocated object can
+only be shared if the object is allocated at the same location, it is
+unlikely that two calls may be shared if the object has been
+deallocated and allocated in between the calls.
+
+Since functions that deallocate heap storage are almost always
+unsharable, practically nothing is lost by marking all functions that
+deallocate heap storage as unsharable, so we have chosen to do this.
+
+\paragraph{Recursive Functions.}_{function!recursive} A function with
+a non-local side
+effect can be shared even if it is called recursively, as long as we
+only allow sharing {\em after} it has been specialized, since the end
+configuration is unknown until specialization of the function has been
+completed.
+
+Allowing functions to call themselves recursively without memoizing
+the calls involves a risk of non-termination, but rather than
+automatically suspending all non-local side effects in recursive
+functions, we make them static unless the user specifies otherwise.
+
+Another possibility is to compute the end configuration as a fix point
+of the recursion, but this complicates the specialization process
+considerably~\cite{Bulyonkov:1996:PracticalAspects}.
+
+
+\paragraph{Implementation.} The changes required to implement function 
+sharing amounts to adding a library function call to each generating
+function, i.e.\ by augmenting Figure~\ref{fig:GEGENFunctionsDynamic}
+as shown in
+Figure~\vref{fig:SLFFunctionSharingGegen},
+and defining  library functions
+$\FfunctionSeenBefore$_{functionSeenBefore@$\FfunctionSeenBefore$},
+$\FpushFun$_{pushFun@$\FpushFun$}
+and $\FpopFun$_{popFun@$\FpopFun$} to handle function memoization, cf.\
+Figure~\vref{fig:SLFFunctionSharingLibrary}. The function
+$\FnonLocalCopy$_{nonLocalCopy@$\FnonLocalCopy$}_{copy!non-local}
+copies exactly those non-local objects that are reachable
+(via pointers etc.) from the global \emph{and} local part of the
+state_{state!local}_{state!global}.
+
+\subsection{Utilizing in-use information}
+\index{in-use analysis!using results from}
+\label{sec:SLFUsingInUseInformation}
+
+Consider the following program fragment where "x", "y" and "n" are
+static, "z" and "total" dynamic:
+\begin{verbatim}
+total = (x + y) * (z - x);           /* basic block 1 */
+if (total >= 0)
+  printf("%d: profit!  x=%d", n, x); /* basic block 2 */
+else
+  printf("%d: deficit!", n);         /* basic block 3 */
+
+return;                              /* basic block 4 */
+\end{verbatim}
+If, during specialization, "x" and "y" can take many different static
+values, basic block 2 will result in many identical specialized versions
+(one for each value of "y"), and basic block 3 will result in an identical
+specialized version for each $("x","y")$, increasing both specialization
+time and residual program size.  The problem is that we compare \emph{all}
+the static values, even though their values cannot influence the following
+specialization.
+
+We reduce this problem by utilizing the in-use information computed in
+Section~\ref{sec:In-UseAnalysis},  only comparing values for variables
+that are actually in use.
+
+After the split phase described in Section~\ref{sec:PartiallyStaticData}
+has completed, we can give each static variable and parameter declaration
+in the program a unique identification number, its $\VID$.
+Whenever a call to $\FpendInsert$ is made, an extra parameter is passed,
+containing (a representation of the $\VID$'s of) those variables that are
+actually in use at the present program point. This parameter is then passed 
+on when comparing or copying the static store.
+
+We can represent the set of variables in use as a bit string $s$,
+where $s[\VID] = $`1' if variable $v_{\VID}$ is in use, $s[\VID] = $`0'
+otherwise. This is probably not a space-efficient
+representation\footnote{If it is a problem in practice, the string can be
+  compressed by a factor 4 (or more) by encoding it as hexadecimal digits},
+but it is a simple way of hardcoding the in-use information into the
+generating extension as string constants.
+
+Assuming $\VID_{\mathtt{x}} = 0$, $\VID_{\mathtt{y}} = 1$ and
+$\VID_{\mathtt{n}} = 2$, the above example would now translate into the
+following:
+\begin{center}\def\d{\(\sb{d}\)}\def\s{\(\sb{s}\)}%
+\leavevmode\small
+\hbox to .44\textwidth{\hss$p$\hss\hss}\hfil
+\hbox to .55\textwidth{\hss$\Ppgen$\hss\hss}\nopagebreak[4]\smallskip
+\nopagebreak[4]
+
+\begin{minipage}[t]{.44\textwidth}\normalsize
+\begin{alltt}
+total = (x + y) * (z - x);
+if (total >= 0)
+  printf("%d: profit!  x=%d", n, x);
+else 
+  printf("%d: deficit!", n); 
+
+
+
+
+return;
+\end{alltt}  
+\end{minipage}\hfil
+\begin{minipage}[t]{.55\textwidth}\def\arraystretch{1.08}
+\begin{array}[t]{rl}
+l_1: & \emit{\bqt{\Vtotal}" = "\bqt{\Flift(x + y)}" * ("
+       \bqt{z}" - "\bqt{\Flift(x)}");"} \\
+     & \emitstmtbegin"if ("\bqt{\Vtotal}" >= 0)" \\
+     & \quad "goto "\bqt{[l_2,\mbox{``101''}]}";" \\
+     & \ "else" \\
+     & \quad "goto "\bqt{[l_3,\mbox{``001''}]}";"\emitstmtend;\
+       \Kgoto\ \LpendLoop \\
+l_2: & \emitstmtbegin\verb+printf("%d: profit! x=%d", +
+       \bqt{\Flift(n)}", "\bqt{\Flift(x)}");"\emitstmtend;\\
+     & \emitstmtbegin"goto "\bqt{[l_4,
+       \mbox{``000''}]}";"\emitstmtend;\
+       \Kgoto\ \LpendLoop\\
+l_3: & \emitstmtbegin\verb+printf("%d: deficit!", +
+       \bqt{\Flift(n)}");"\emitstmtend;\\
+     & \emitstmtbegin"goto "\bqt{[l_4,
+       \mbox{``000''}]}";"\emitstmtend;\
+       \Kgoto\ \LpendLoop\\
+l_4: & ...
+\end{array}
+\end{minipage}\hfil
+\end{center}
+
+
+
+\paragraph{The memory management functions and data structures}
+must be augmented to accommodate and check the in-use parameter before copying as shown in
+Figure~\ref{fig:SLFMemoryManagementAdditions}:%
+\begin{figure}[htbp]
+\begin{center}\leavevmode\hbox{\vbox{%
+\begin{pseudocode}
+  $\TDataObjectCopy\ {*}
+    \FcopySimple(\TDataObject\ {*}\Vobj,\ \TIUInfo\ \VinUse)$ \+\\
+    $\Kif\ \Fnot(\FisInUse(\FID(\Vobj), \VinUse))\ \Kthen\ \Kreturn\ \CNull$ \\
+      $...$ \-
+  \\[1em]
+  $\Tbool\ \FcmpSimple(\TDataObject\ *\Vobj,\
+                       \TDataObjectCopy *\Vcpy,\ \TIUInfo\ \VinUse)$ \+\\
+    $\Kif\ \Fnot(\FisInUse(\FID(\Vobj), \VinUse))\ \Kthen\ \Kreturn\ \Ctrue$ \\
+    $...$ \-
+  \\[1em]
+  $\TDataObjectCopy\ {*}
+    \FcopyWithOffset(\TDataObject\ {*}\Vobj,\ \Tvoid\ {*}\Vref,\
+                     \TIUInfo\ \VinUse)$ \+\\
+    $\Kif\ \Fnot(\FisInUse(\FID(\Vobj), \VinUse))\ \Kthen\ \Kreturn\ \CNull$ \\
+      $...$ \-
+  \\[1em]
+  $\Tbool\ \FcmpWithOffset(\TDataObject\ *\Vobj,\
+                       \TDataObjectCopy *\Vcpy, \
+                       \Tvoid\ {*}\Vref,\ \TIUInfo\ \VinUse)$ \+\\
+    $\Kif\ \Fnot(\FisInUse(\FID(\Vobj), \VinUse))\ \Kthen\ \Kreturn\ \Ctrue$ \\
+    $...$ \-
+\end{pseudocode}}}
+    \caption{Additions to memory management functions to make use of in-use 
+      information}
+    \label{fig:SLFMemoryManagementAdditions}
+  \end{center}
+\end{figure}
+just before copying or comparing an object, we check whether the
+object is in use by using the object's ID to index into the in-use
+string: type $\TIUInfo$ is a synonym for $\Tchar*$ and $\FisInUse :
+\Tint \x \TIUInfo -> \Tbool$_{isInUse@$\FisInUse$} is defined by
+$\FisInUse(\Tint\ \VID, \Tchar\ *\VinUse) = (\VinUse[\VID] =
+{}$`1'$)$. If the object turns out not to be in use, we return
+immediately; any other objects it might point to need \emph{not} be
+copied due to this object. If some other object in use points to these
+objects, \emph{they} will take care of the copying: If some object is
+in use, it must either be a local or global variable which is in use,
+or be reachable via local or global pointers that are in use.
+
+Quite  similar additions apply to the copy and compare
+functions_{function!copy!type specific}%
+_{function!compare!type specific} for structs and arrays generated by
+gegen in
+Figures~\ref{fig:SLFUserTypesCopyFun}--\ref{fig:SLFArrayCopyCmpFun}.
+
+The library functions for handling residual function sharing must be
+augmented so that  in-use information is passed along when comparing and
+copying the state, cf.\ Figure~\ref{fig:SLFFunctionSharingLibrary}.%
+\begin{figure}[hbtp]
+\begin{center}\leavevmode\hbox{\vbox{%
+\begin{pseudocode}
+  $\FfunctionSeenBefore(\Vid, \Vstate, \VinUse, \VtmpRetVal) = {}$ \+\\
+    $\Kfor\ (\Vid_f, \Vstate_f, \VendState_f, \VtmpRetVal_f, f_{\Vresid}) 
+             \in \VseenBefore\ \Kdo$ \+\\
+      $\Kif\ \Vid_f = \Vid \mathrel{\land} 
+             \Fequal(\Vstate_f, \Vstate, \VinUse)\ \Kthen$ \+\\
+        $\Frestore(\VendState_f)$ \\
+        $\VretVal := \VtmpRetVal_f$ \\
+        $\Kreturn\ f_{\Vresid}$ \-\-\\
+    $\Kreturn\ \CNoName$ \-
+  \\[1em]
+  $\FpushFun(\Vid, \Vstate, \VinUse) = {}$ \+\\
+    $f_{\Vresid} := \FfreshResidFun(\Vid)$ \\
+    $\Fpush(\VfunStack, (\Vid, f_{\Vresid}, \VemptyBody))$ \\
+    $\Kif\ \Fsharable(\VcurrentFun)\ \Kthen$ \+\\
+      $\VcurrentFun := (\Vid, \Fcopy(\Vstate, \VinUse), 
+                        \CNull, \CNull, f_{\Vresid})$ \\
+      $\Fadd(\VseenBefore, \VcurrentFun)$ \-\\
+    $\Kelse$ \+\\
+      $\VcurrentFun := (\Vid, \CNull, 
+                        \CNull, \CNull, f_{\Vresid})$ \-\\
+    $\Kreturn\ f_{\Vresid}$ \-
+  \\[1em]
+  $\FpopFun(\Vstate, \VtmpRetVal) = {}$ \+\\
+    $(\Vid_f, \Vstate_f, \VendState_f, \VtmpRetVal_f, f_{\Vresid})
+     == \VcurrentFun$ \\
+    $\Kif\ \Fsharable(\VcurrentFun)\ \Kthen$ \+\\
+      $\VendState_f := \FnonLocalCopy(\Vstate)$ \\
+      $\VtmpRetVal_f := \VtmpRetVal$ \-\\
+    $\Kelse$ \+\\
+      $\Ffree(\VtmpRetVal)$ \-\\
+    $\Kreturn\ f_{\Vresid}$
+\end{pseudocode}}}
+    \caption{Specialization library functions supporting
+      residual function sharing and in-use information} 
+    \label{fig:SLFFunctionSharingLibrary}
+  \end{center}
+\end{figure}
+Note that in-use information is \emph{not} needed at
+function return, because we do not know at gegen time what objects are 
+in use at the call site that has invoked the function; all we can do
+is to reduce the copying to copy only non-local objects.
+
+\paragraph{The gegen transformations}
+for dynamic "if" and "goto"  in
+Figure~\ref{fig:GEGENControlStatements} must be augmented thus:_{IU@$\OIU$}
+\[
+\begin{array}{lcl}
+      \gegen{\CIf_d(e,l_1,l_2)} & 
+      =& \emit{"if ("\bqt{\gegen{e}}") goto "
+         \bqt{[l_1, \widetilde{\textsl{iuCst}_{l_1}}]}
+        "; else goto "\bqt{[l_2, \widetilde{\textsl{iuCst}_{l_2}}]}";"};\ 
+        \hfill\Kgoto\ \LpendLoop \mathpunct{}
+      \\[1.2ex]
+      \gegen{\CGoto_d(l)} &
+      =& \emit{"goto "\bqt{[l, \widetilde{\textsl{iuCst}_l}]}";"};\ 
+        \hfill\Kgoto\ \LpendLoop\mathpunct{\rlap{,}}
+  \\[1em]
+  \mc{3}{l}{\textnormal{where $\widetilde{\textsl{iuCst}_l} =
+      \FtoStr(\OIU(b_l))$ is a constant computed at gegen time}}
+\end{array}
+\]
+and the gegen transformation for dynamic functions must be augmented as
+shown in Figure~\ref{fig:SLFFunctionSharingGegen}_{<.>@$\gegen{\cdot}$}.
+\begin{figure}[hbt]
+\begin{center}\leavevmode\hbox{\vbox{%
+\begin{pseudocode}
+  \>$\quad\vdots$ \+\\
+  $\Kif\ \VcallType = \CMem\ \Kthen$ \+\\
+    $f_{\Vresid} := 
+     \FfunctionSeenBefore(\Void, \VactiveState,
+     \widetilde{\textsl{iuCst}}, \VtmpRetVal)$ \\
+    $\Kif\ f_{\Vresid} \ne \CNoName\ \Kthen$ \+\\
+      $\FassignRetVal(\VretVal_s, \VtmpRetVal, \Fsizeof(t_s))$ \\
+      $\FpopObjects(q)$ \\
+      $\Kreturn\ f_{\Vresid}$ \-\\
+    $\Kelse$ \+\\
+      $f_{\Vresid} := 
+      \FpushFun(\Void, \VactiveState, \widetilde{\textsl{iuCst}})$ \\
+      $\emitstmtbegin\bqt{t_d\ f_{\Vresid}}"("
+           \bqt{\gegen{d_1}_{\Vpini}}", " ... ", "
+           \bqt{\gegen{d_n}_{\Vpini}}
+           "){"\emitstmtend$ \-\-\\
+  $\Kelse$ \+\\
+    $\vdots$ \-\-\\[1em]
+  where $\widetilde{\textsl{iuCst}} = \FtoStr(\OIU(b_1))$ is a
+  constant computed
+  at gegen time 
+\end{pseudocode}}}
+    \caption{Additions to gegen for supporting residual function
+      sharing and in-use information}
+    \label{fig:SLFFunctionSharingGegen}
+  \end{center}
+\end{figure}
+
+\subsection{Code generation}
+\label{sec:SLFCodeGeneration}
+\index{[.]@$\emit{\cdot}$|(} 
+
+The overloaded code generating function, $\emit{\cdot}$, used in the
+generating extension is simply implemented by various "cmix"$x$ library
+functions: "cmixIf"_{cmixIf@"cmixIf"}, "cmixGoto"_{cmixGoto@"cmixGoto"},
+"cmixAssign"_{cmixAssign@"cmixAssign"}, "cmixExpr"_{cmixExpr@"cmixExpr"},
+\ldots
+
+\index{[.]@$\emit{\cdot}$|)}
+
+\subsubsection{Lift functions}
+\label{sec:SLFLiftFunctions}
+\index{lifting}
+
+During specialization, constant values need to be exported to the residual
+program---this is called \emph{lifting} static values into $\Ppres$.  The
+(type overloaded) library function for lifting simple types is called
+"cmixLift"_{cmixLift@"cmixLift"}. For function pointers, we need a special
+``dereference-and-lift'' function: given a \emph{pointer} we want the
+residual representation (name) of a \emph{function}. This is done by the
+library function $\FliftFP$, which is passed a list of pointers to all the
+functions in the generating extension, so that it can compare a pointer
+that must be dereferenced-and-lifted:
+\begin{center}\leavevmode\hbox{\vbox{%
+\begin{pseudocode}
+  $\TCode\ \FliftFP(\Tstruct\ \{\ \Tvoid\ {*}f;\ \TCode\ \Vname\ \}\
+   {*}\Vfcns,\ \Tvoid\ {*}f)\ \{$ \+\\
+    $\quad \Kreturn\ \Flookup(\Vfcns,\ f)$ \-\\
+  $\}$
+\end{pseudocode}}}
+\end{center}
+
+
+\subsubsection{Namespace Management}
+\label{sec:SLFNamespaceManagement}
+\index{namespace!$\Ppres$}
+
+$\Ppgen$'s namespace manager for $\Ppres$ identifiers is quite similar to
+gegen's (cf.\ Section~\vref{sec:GEGENNamespaceManagement}). 
+
+
+\subsection{Miscellaneous helper functions}
+\label{sec:SLFMiscellaneous}
+
+The functions for handling the static part of return
+values_{value!return!static} (cf.\ Figures~\ref{fig:GEGENControlStatements}
+and~\ref{fig:GEGENFunctionsDynamic}) are defined
+by_{setRetVal@$\FsetRetVal$}_{assignRetVal@$\FassignRetVal$}:
+\begin{center}\leavevmode\hbox{\vbox{%
+  \begin{pseudocode}
+    $\FsetRetVal(\Tvoid\ {*}\Vval,\ \Tvoid\ {*}\VtmpRetVal,\ 
+                 \Tint\ \Vsize) = {}$
+    \+\\
+      $\Kif\ \VtmpRetVal \ne \CNull\ \Kthen$ \+\\
+        $\Kif\ \Fmemcmp(\VtmpRetVal,\ \Vval,\ \Vsize) \ne 0\ \Kthen$ \+\\
+           $\Kerror($``Two different function 
+                       end configurations!''$)$ \-\-\\
+      $\Kelse$ \+\\
+        $\VtmpRetVal := \Fmalloc(\Vsize)$ \\
+        $\Fmemcpy(\VtmpRetVal,\ \Vval,\ \Vsize)$ \-\-
+    \\[1em]
+    $\FassignRetVal(\Tvoid\ {*}\VretVal,\ \Tvoid\ {*}\VtmpRetVal,\ 
+                 \Tint\ \Vsize) = {}$
+    \+\\
+      $\Kif\ \VtmpRetVal \ne \CNull\ \Kthen$ \+\\
+        $\Fmemcpy(\VtmpRetVal,\ \Vval,\ \Vsize)$ \\
+  \end{pseudocode}}}
+\end{center}
+
+
+
+\subsection{Implementation level (1999-03-16)}
+\label{sec:SLFImplementationLevel}
+
+This chapter has not been updated in a year and is wildly incorrect.
+
+\end{docpart}
+
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 

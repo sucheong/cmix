@@ -1,0 +1,713 @@
+% File: corec.tex
+% Time-stamp: 
+% $Id: corec.tex,v 1.5 1999/06/10 15:45:28 makholm Exp $
+
+\providecommand{\docpart}{\input{separatehead}}
+\begin{docpart}
+
+\section{The \coreC language}
+\label{sec:TheCoreCLanguage}\index{Core C language}
+Input to \cmix is any strictly confoming \ansiC
+program~\cite{ANSI:1990:ANSIC}. In most analyses\footnote{The
+only exceptions are an initial conventional type check and the
+resolution of identifiers in user annotation directives.}
+we represent it
+internally in the \cmix system in a reduced representation
+that we call \coreC. The reason for
+this is to make it easier both to implement and to ensure correctness
+of various analyses and transformations.
+
+\coreC is sufficiently close to C that one can view it as a
+restricted subset of \ansiC. However, several details are
+treated more orthogonally than the real language.
+The most important differences are:
+\begin{itemize}
+\item \coreC has no structured control constructs apart from
+        function calls. The control statements of \ansiC are
+        translated into a ``flat'' flow graph where only
+        \syntax{goto} statements and ``\syntax{if ($e$) goto
+        $l_1$; else goto $l_2$;}''
+        appear.
+\item \coreC \emph{expressions} have no side effects. Side effects
+        are produced by primitive \emph{statements}.
+        (Expressions can still have the ``side effect'' of
+        trying to derefence a null pointer and killing the program).
+\item \coreC has no lvalue expressions. Thus there is no
+        generic ``address-of'' operator, but the constructs
+        that in \ansiC produce lvalues (such as naming a variable
+        or selecting a member of a struct) have \coreC counterparts
+        that evaluate to pointers to the location the lvalue
+        references.
+\item \coreC has no implicit conversions or coercions. Every
+        such thing---ranging from promoting an \syntax{int} to
+        \syntax{long} so one can add it to another \syntax{long},
+        to the ``pointer decay rule'' for arrays---is represented
+        as an explicit construct.
+\item \coreC has only two lifetimes for variables: they are either
+        global or local to a function. \syntax{static} variables
+        are made global, and \syntax{auto} or \syntax{register}
+        variables declared in compound statements are collected
+        in a single list of the function's local variables.
+\end{itemize}
+
+\coreC also has an element of ``non-ortogonality'': where a
+construction can easily be replaced with an equivalent
+representation in a certain context, we generally
+disallow it in this description.
+
+Examples of this strategy are the decisions that pointer-valued
+expressions cannot be direct operands to the logical operators
+\syntax{!}, \syntax{||}, and \verb.&&., or the rule that a
+suitable expression \emph{must} be present in the \syntax{return}
+statements in a nonvoid function.
+
+This is intended to simplify the analyses: \eg, one could imagine
+an analysis that has to do something special when a pointer value
+is ``consumed''; such an analysis would benefit from not having to
+check the operand types of the logical operators for pointerness.
+
+Internally \coreC is represented as heavily interlinked heap
+allocated C++ objects. However, it is instructive to think of
+a \coreC program as a tree structure where cross-links occasionally
+appear as payload data in the nodes---even if the cross-links are
+physically represented as the same types of pointers that parent
+nodes use to link to their children. The grammar for this tree
+appears in figure \ref{fig:corecinternal}.
+
+\begin{figure}\begin{center}
+\small\[
+\begin{array}{|l|r@{~}c@{~}l|l|}
+\hline
+  \mbox{C++ class} & \multicolumn{3}{l|}{\mbox{grammar}} & \mbox{comments} \\
+\hline\hline
+\syntax{C\_Pgm} & p &::=& (\vec\sigma, \vec\eta, \vec d_v,
+                                \vec d_f ,\vec d_{gf}) & \\
+\syntax{C\_UserDef} & \sigma
+        &::=& \cons{Struct}(id?,\vec{\epsilon},\vec{\coreXref t}\,) & \\
+\mbox{~~(struct/union defn)}
+        &&|& \cons{Union}(id?,\vec{\epsilon},\vec{\coreXref t}) & \\
+\syntax{C\_EnumDef} & \eta   &::=& \cons{Enum}(id?,\vec\epsilon\,) & \\
+\mbox{~~(enum definition)} & \epsilon &::=& (id,q,e?)
+                & \mbox{enum constant with possible value} \\
+\hline
+\syntax{C\_Decl} & d &::=& \cons{Var}(id?,q,t,\delta,i?,\vec d\,) & \\
+\mbox{~~(declaration)}&&|& \cons{Fun}(id,t,\vec d_p,\vec d_v,\vec b\,)
+                        & \mbox{empty } \vec b \mbox{ means prototype} \\
+\syntax{C\_Init} & i &::=& \cons{Simple}(e) & \\
+\mbox{~~(initializer)}&&|& \cons{FullyBraced}(\vec\imath\,) & \\
+                 &   & | & \cons{SloppyBraced}(\vec\imath\,) & \\
+		 &   & | & \cons{StringInit}(\mathit{string}) & \\
+\syntax{VariableMode} & \delta
+  &::=& \cons{VarIntAuto}     & \mbox{Internal variable} \\
+  &&| & \cons{VarIntResidual} & \mbox{Internal, declared residual} \\
+  &&| & \cons{VarIntSpectime} & \mbox{Internal, declared spectime} \\
+  &&| & \cons{VarVisResidual} & \mbox{Declared visible residual} \\
+  &&| & \cons{VarVisSpectime} & \mbox{Declared visible spectime} \\
+  &&| & \cons{VarExtDefault} ~|~
+        \cons{VarExtResidual} & \mbox{External residual variable} \\
+  &&| & \cons{VarExtSpectime} & \mbox{External spectime variable} \\
+\hline
+\syntax{C\_BasicBlock}& b &::=& (\vec s,j) & \\
+\syntax{C\_Jump}& j &::=& \cons{If}(e,\coreXref{b_{\mathrm{then}}},
+                                \coreXref{b_{\mathrm{else}}})
+        & \syntax{if (}e\syntax{) goto }b_{\mathrm{then}}
+          \syntax{; else goto }b_{\mathrm{else}}\syntax{;} \\
+\mbox{~~(control stmt)}&&|& \cons{Goto}(\coreXref b) & \\
+                &   & | & \cons{Return}(e?) & \\
+\syntax{C\_Stmt}    & s &::=& \cons{Assign}(e,e') & \syntax{*}e\syntax{=}e' \\
+\mbox{~~(statement)}&   & | & \cons{Call}(e?,\gamma,e_f,\vec e\,)
+        & \syntax{*}e\syntax{=(*}e_f\syntax{)(}\avec{e}\syntax{)} \\
+                    &   & | & \cons{Alloc}(e,d)
+        & \syntax{*}e\syntax{=calloc(}e',\syntax{sizeof (}t_d\syntax{))} \\
+                    &   & | & \cons{Free}(,e')
+        & \syntax{free(}e'\syntax{)} \\
+\syntax{CallMode}&\gamma&::=& \cons{CallAtSpectime}
+                        & \mbox{call external function at spectime} \\
+                    &   & | & \cons{CallOnceSpectime}
+                        & \mbox{ditto but illegal if dyn. control} \\
+                    &   & | & \cons{CallAuto}
+                        & \mbox{pure external call} \\
+                    &   & | & \cons{CallResidual} ~|~ \cons{CallDefault}
+                        & \mbox{residual call to external function} \\
+\hline
+\syntax{C\_Expr} & e &::=& \cons{Var}(t,\coreXref d)
+                                & \mbox{the address of the variable} \\
+\mbox{~~(expression)}&&| & \cons{EnumConst}(t,\coreXref\epsilon)
+                        & \mbox{an enum constant (always an \syntax{int})} \\
+                 &   & | & \cons{Const}(t,c)
+                                & \mbox{(constants can have any type)} \\
+                 &   & | & \cons{Null}(t)
+                                & \mbox{null pointer constant} \\
+                 &   & | & \cons{Unary}(t,\diamond,e) & \\
+                 &   & | & \cons{PtrArith}(t,e_1,\circ,e_2) 
+                                & \mbox{ptr}\circ\mbox{num}=\mbox{ptr} \\
+                 &   & | & \cons{PtrCmp}(t,e_1,\circ,e_2)
+                                & \mbox{ptr}\circ\mbox{ptr}=\mbox{num} \\
+                 &   & | & \cons{Binary}(t,e_1,\circ,e_2)
+                                & \mbox{num}\circ\mbox{num}=\mbox{num} \\
+                 &   & | & \cons{Member}(t,e,m)
+                & \mbox{ptr to struct}\rightarrow\mbox{ptr to member} \\
+                 &   & | & \cons{Array}(t,e)
+                & \mbox{ptr to array}\rightarrow\mbox{ptr to first element} \\
+                 &   & | & \cons{DeRef}(t,e)
+                                & \mbox{contents of pointed-to address} \\
+                 &   & | & \cons{Cast}(t,e) & \\
+                 &   & | & \cons{SizeofType}(t,t') & \\
+                 &   & | & \cons{SizeofExpr}(t,e) & \\
+\syntax{UnOp}&\diamond&::=&\syntax{-}~|~\verb.~.~|~\syntax{!} & \\
+\syntax{BinOp}&\circ &::=& \syntax{*}~|~\syntax{/}~|~\syntax{\%}~|~
+                                \syntax{+}~|~\syntax{-}~|~\syntax{<<}~|~
+                                \syntax{>>}~|~\syntax{<}~|~\syntax{>} & \\
+                 &   & | & \syntax{<=}~|~\syntax{=>}~|~\syntax{==}~|~
+                                \syntax{!=}~|~\syntax{\&}~|~\syntax{|}~|~
+                                \verb.^.~|~\syntax{\&\&}~|~\syntax{||} & \\
+\hline
+\syntax{C\_Type} & t &::=& \cons{Abstract}(id)
+                                & \mbox{Non-arithmetic primitive type} \\
+\mbox{~~(type)}  &   & | & \cons{Primitive}(id)
+                                & \mbox{Arithmetic primitive type} \\
+                 &   & | & \cons{Enum}(\coreXref\eta)
+                                & \mbox{Enumerated type} \\
+                 &   & | & \cons{Array}(t,e?,q)
+                                & \mbox{Array of }q~t\mbox{, length }e \\
+                 &   & | & \cons{Pointer}(t,q)
+                                & \mbox{Pointer to } q ~ t \\
+                 &   & | & \cons{FunPtr}(\cons{Fun}(t,\vec t\,))
+                                & \mbox{Pointer to function} \\
+                 &   & | & \cons{Fun}(t,\vec t\,)
+                        & \mbox{Function of }\vec t\mbox{ returning }t\\
+                 &   & | & \cons{StructUnion}(q,\coreXref\sigma,\vec t\,)
+                        & \mbox{Struct or union with member types }\vec t \\
+\syntax{constvol}& q &::=& (\cons{Const}?,\cons{Volatile}?) & \\
+\hline
+\end{array}\]\end{center}
+\vskip-1ex\relax
+\caption{The \coreC grammar.}
+  \label{fig:corecinternal}
+\end{figure}
+
+The grammar uses the following conventions:
+\begin{itemize}
+\item[$c$] is any (non-string) constant.
+\item[$id$] is a name from the original \ansiC program.
+\item[$m$] is the ordinal number of a struct or union member.
+\item[$x?$] is an optional $x$.
+\item[$\vec x$] is a list of $x$. Lists are represented by the
+        \syntax{Plist<}$T$\verb.>. template for a list of pointers
+        to $T$, defined in \syntax{Plist.h}. These lists support
+        STL-like iterators.
+\item[$\coreXref x$] is a cross-link to
+        an element somewhere else in the program.
+        This notation is not used for types ($t$) because
+        the structural sharing rules are not as simple as for the
+        other classes. A detailed description appears in section
+        \ref{sec:corecTypeSharing}.
+\end{itemize}
+
+The definitions of the C++ classes that make up the actual
+\coreC representation are defined in the source file
+\syntax{corec.h}. The auxilliary types whose names do not start
+with \syntax{C\_} are defined in \syntax{tags.h}.
+
+The \coreC structures use tags and
+unions; not inheritance and virtual functions. The reason for this is
+that the core language is not expected to change, whereas the various
+kinds of analyses are very likely to change. In a traditional OO
+design, every construct should contain a virtual method that carried
+out the part of some analysis that applies for that particular
+construct. This would result in each analysis being distributed into
+several parts of the program, which would make \cmix hard to
+understand and maintain.
+
+\subsection{Programs}
+A program is a collection of
+\begin{itemize}
+\item struct and union definitions.
+\item enum definitions.
+\item global variables (which include \syntax{static} and \syntax{extern}
+        variables declared inside the \ansiC program's functions).
+\item function definitions.
+\item ``goal'' function definitions.
+\end{itemize}
+
+A struct and or definition consist of an optional tag and a list
+of member descriptions. They also have a list of all the (\cons{StructUnion})
+type nodes that reference them.
+
+The member descriptions (denoted with $\epsilon$'s in the grammar)
+only include the member's name, type qualifiers, and and optional
+expression that denote a possible bitfield width.
+If a definition for the aggregate needs to be written, one needs
+to go via one of the referencing \cons{StructUnion} nodes to find
+the type of each member. Aggregates with no referencing
+\cons{StructUnion} should and need not exist in \coreC at all.
+
+\subsection{Declarations}
+Despite its name, the \syntax{C\_Decl} class represents not only variable
+declaration but anything in the program the pointer analysis needs to
+say a pointer may point to. This is the reason why variables and
+functions are represented by the same construction.
+
+The source file \syntax{ALoc.h} defines types and functions that
+manage unordered sets of declaration references, used by several
+of the analyses.
+
+\subsubsection{Function declarations}
+
+$\cons{Fun}(id,t,\vec d_p,\vec d_e,\vec b\,)$
+declarations are simple. They have a name and a type (always
+a \cons{Fun} type),
+lists of formal parameter and local variable declarations, and a
+nonempty list of basic blocks. Execution of the function body starts
+at the first basic block in the list, and always ends with an
+explicit \cons{Return} statement. Functions cannot return simply
+by ``falling through the body''.
+
+External functions are not separately represented in the \coreC
+program; references to them are \cons{Const} expressions.
+
+\subsubsection{Variable declarations}
+\label{sec:corecVariables}
+
+\cons{Var} declarations are more complex. They always have a type but
+may have no name: sometimes the c2core phase
+needs to introduce new temporary variables. Each variable has a
+\emph{varmode} that defines its linkage and any user annotations on
+it. A variable may have an \emph{initializer} (section
+\ref{sec:coreInitializers}).
+
+Additionally, if the variable consists of sub-objects that can be
+individually pointed to (\emph{i.e.}, if it has \cons{Array} or
+\cons{StructUnion} type), its declaration also includes one or
+more \emph{subsidiary declarations} which represent the sub-objects
+in the pointer analysis and other analyses that depend on that.
+If the type is an array there is a single subsidiary declaration
+which collectively represents the elements of the array. If the
+type is a struct or union there is a subsidiary declaration for each
+of its members.
+
+A subsidiary declaration per convention have no name or
+initializer; its varmodes specify internal linkage.
+However, it may contain its own subsidiaries, according to its type.
+
+An example on the use of subsidiary declaration appears on
+figure \ref{fig:typesharing}, page \pageref{fig:typesharing}.
+
+Declarations for formal parameters behave like variable declarations
+but never have initializers. So does the name-less declaration that
+is part of an \cons{Alloc} statement; it collectively represents every
+block of memory that gets allocated by the statement.
+
+\subsection{Initializers}
+\label{sec:coreInitializers}
+
+An initializer is an optional part of a local or global variable
+declaration. Its structure resembles the C read syntax for
+initializers.
+
+The $\cons{FullyBraced}(\vec\imath\,)$ construction is used where it
+can be guaranteed that each of the elements of $\vec\imath$
+initialize exactly one of the immediate subobjects of the aggregate
+initialized by the initializer.
+
+Sometimes, however, that is not possible,
+and the structure of the read \ansiC initializer is simply copied
+using \cons{SloppyBraced} nodes. This reduces the precision of the
+analyses and prevents splitting of the initialized object into
+more than a single spectime or residual part.
+
+A \cons{FullyBraced} initializer can have a \cons{SloppyBraced}
+node as one of its subinitializers.
+
+\begin{figure}\begin{center}\begin{tabular}{|l|l|}
+\hline Declaration & Initializer \\ \hline \hline
+\syntax{int a1[sizeof(int)][] = \{1,2,3,4,5,6\};} &
+$\cons{SloppyBraced}(\syntax{1}, \syntax{2}, \syntax{3},
+                     \syntax{4}, \syntax{5}, \syntax{6})$ \\
+\syntax{int a2[4][] = \{1,2,3,4,5,6\};} &
+$\cons{FullyBraced}(
+        \cons{FullyBraced}(\syntax{1}, \syntax{2}, \syntax{3}, \syntax{4}),$ \\
+& \hskip 2cm $
+        \cons{FullyBraced}(\syntax{5},\syntax{6}))$ \\
+\syntax{int a3[sizeof(int)][] = \{\{1,2,3,4\},\{5,6\}\};} &
+$\cons{FullyBraced}(
+        \cons{FullyBraced}(\syntax{1}, \syntax{2}, \syntax{3}, \syntax{4}),$ \\
+& \hskip 2cm $
+        \cons{FullyBraced}(\syntax{5},\syntax{6}))$ \\
+\hline
+\end{tabular}\end{center}
+\caption{Examples of the initializer representation}
+\end{figure}
+
+\subsection{Statements}
+All statements have an optional left-side expression that, if present,
+points to the location where the result of the statement is stored. If
+the left side is not present, the result is ignored. Actually the
+left-side is only genuinely optional in the \cons{Call} statement, but
+it is treated uniformly across all statement cases.
+
+The \cons{Assign} statement is a simple assignment; its only side
+effect is the assignment to the left-side. An \cons{Assign} with
+an empty left-side would be a no-op, so is optimized away in the
+c2core phase.
+
+The \cons{Call} statement performs a call through a function pointer
+expression. The statement has a \emph{callmode} attribute that
+tells when (at spectime or at residual time)
+the call should be made if it is a call to an external function.
+Specializable functions (ones for which we know a body) are called
+through static pointers, so for the purposes of callmode they are
+considered spectime.
+
+Calls to the \syntax{malloc()} and \syntax{calloc()} standard library
+functions are intercepted in the c2core phase and translated into
+$\cons{Alloc}(e,d)$ statements.
+The declaration
+$d$ is used in the analyses to represent collectively all the pieces
+of memory allocated by that particular \cons{Alloc} statement.
+The type of $d$ is always an \cons{Array} type; its size expression
+specifies the number of objects to allocate on the heap. Contrary to
+other array size expressions, this one does not need to be a constant
+expression; it is evaluated in the context of the \cons{Alloc}
+statement. If the \cons{Array} type has no size expression, a single
+object is allocated.
+The left-hand side of the \cons{Alloc} statement is never empty:
+an allocation that turns out to be ignored gets optimized away
+in the c2core phase.
+
+The \cons{Free} statement is the translation of a call to the
+\syntax{free()} standard library function. This function has a return
+type of \syntax{void}, so the left side of the statement must be
+empty.
+
+\subsubsection{Control statements}
+The definitions of control statements and basic blocks is fairly
+straight-forward.
+
+The \cons{Return} statements are normalized so that the expression
+is present precisely if the function does not return \syntax{void}.
+If necessary, an anonymous global variable of the proper type is
+generated, and its (never assigned-to) value is returned.
+
+\subsection{Expressions}
+
+A \coreC expression has no side effects and always specifies a
+value, never a location. An \ansiC expression that is used as
+an lvalue is translated to a \coreC expression whose value is
+a pointer to the location of the lvalue.
+
+Every expression has a type as its first attribute; this is the
+type of the expression's value. This attribute is treated uniformly
+across the possible expression forms, so that analyses can act on
+the type of an expression without doing a case analysis on its
+form. See section \ref{sec:corecTypeSharing} for a description
+of structural sharing between these types.
+
+A $\cons{Var}(t,\coreXref d)$ expression evaluates to the
+\emph{address} of the referenced variable or function. $d$ must be
+a function, a global variable, or a formal
+parameter or local variable in the same function the expression
+appears in. It cannot be a subsidiary object declaration---pointers
+to structure members and array elements are produced by the
+\cons{Member} and \cons{Array} expressions.
+
+\cons{EnumConst} expressions model enumeration constants. They are
+different from \cons{Var} expression because enumeration constants
+don't have addresses and can have different binding times each
+time they are mentioned. They are different from \cons{Const} in that
+they need to be name managed.
+
+The $\cons{Const}(t,c)$ expression is used for numeric constants,
+\emph{and} for identifiers declared as
+\syntax{well-known constant:} by user annotations. These constants
+can have arbitrarily complex types. This feature is used by the
+shadow headers---\emph{e.g.}, by the \syntax{stdio.h} shadow which
+defines \syntax{stderr} to be a well-known constant of type ``pointer
+to \syntax{FILE}''. This differs from using a \syntax{const} variable
+in that different occurences of the well-known constant can have
+different binding times.
+This situation is
+similar to what should happen when external functions are mentioned.
+Thus, \cons{Const} is also used for representing the expressions
+consisting of the name of an external function.
+
+A special case $\cons{Null}(t)$ exist for expressing null pointer
+constants. This is different from $\cons{Const}(t,\syntax{NULL})$
+in that a pointer \cons{Const} points to some unknown external
+location, while \cons{Null} never points to anything.
+
+The only \cons{Unary} operators in \coreC are the various senses
+of negation. The operand is never a pointer---when the
+\syntax{!}\ operator is applied to a pointer expression c2core
+substitutes an explicit test against a null pointer constant.
+
+The binary operators are translated to \cons{PtrArith},
+\cons{PtrCmp}, or \cons{Binary} expressions, depending on the types
+of the operands and result. If pointer expressions appear as
+operands to the \verb.&&. and \verb.||. operators, explicit
+tests against null pointer constants are inserted.
+The short-circuiting behavior of the \verb.&&. and \verb.||. operators
+in \ansiC is only partly relevant in \coreC because expressions do not
+have side effects.
+
+The operand ordering to \cons{PtrCmp} is normalized so the left
+operand is always the pointer and the right always the integer.
+
+In the $\cons{Member}(t,e,m)$ expression, $e$ must evaluate to
+a pointer to a struct or union. The \cons{Member} expression
+produces a pointer to the $m$th of its members. This is sufficient to
+represent the dot operator of \ansiC\footnote
+        {One might think that this assertation ignores the fact
+        that there can be non-lvalue expression with struct or
+        union type in \ansiC. However, this only happens with
+        function calls, simple assignment, and the \syntax{?:}
+        operator---neither of which are expressions in
+        \coreC. In each of these cases the c2core translation
+        already uses a translation strategy that automatically provides
+        an addres to a struct or union object with the same contents
+        as the non-lvalue struct or union.}.
+
+The $\cons{Array}(t,e)$ expression produces a pointer to the
+first element of the array pointed to by the pointer that $e$
+evaluates to. The \ansiC counterpart is the implicit ``pointer
+decay'' that happens to expressions with array type.
+
+Type casts, $\cons{Cast}(t,e)$, can appear between
+any pair of types $t_e$ and $t$. That is theory at least; in practise
+programs with badly-behaved casts will not survive
+the type checker to tell the tale.
+
+% The following was a noble thought, but we need to reduce everything
+% to SizeofExpr anyway so we can observe the scope rules as we emit
+% pgen and pres.
+%
+%It is tempting to reduce \cons{SizeofExpr} to
+%\cons{SizeofType}. After all, we know the type of the expression
+%operand. However, in general---though not precisely in
+%\cmix---having expressions as operands to \syntax{sizeof}
+%can provide potentially valuable information to program analyses
+%or program transformers, which might be more conservative
+%when faced with a naked type expression. Thus it would be
+%unjust of us to lose these connections in the residual program.
+
+\subsubsection{Restrictions on expressions}
+
+\begin{itemize}
+\item No expressions have \cons{Fun} type.
+\item Expressions with \cons{Array} type only appear as
+        operands to \cons{SizeofExpr}.
+\item Expressions with \cons{StructUnion} type only appear as
+        operands to \cons{SizeofExpr}, as right-hand sides of
+        \cons{Assign} statements, or in argument lists of
+        \cons{Call} statements.
+\item The expression in a \cons{Simple} initializer and the length
+        of an \cons{Array} type are constant expressions. They may
+        not contain any \cons{DeRef} expressions (except in operands to
+        \cons{SizeofExpr}), and \cons{Var} expressions
+        may not reference formal parameters or local variables.
+\end{itemize}
+
+\subsubsection{Displaying expressions}
+
+The left-hand side of figure \ref{fig:corecdisplay} defines the
+closest one gets to a fully compositional write syntax
+for \coreC expression that could be parsed by an \ansiC
+parser.
+
+\begin{figure}\begin{center}
+\def\can#1{(\!|#1|\!)}
+\def\hum#1{\{\!|#1|\!\}}
+\def\shum#1{{\hum{#1}\!}^*}
+\small\[
+\begin{array}{|r@{\:}c@{\:}l|r@{\:}c@{\:}l|}
+\hline
+\multicolumn{3}{|c|}{\mbox{Canonically}} &
+\multicolumn{3}{c|}{\mbox{Optimizing}} \\
+\hline
+\hline
+   \can{\cons{Var}(t,\coreXref d)} &=& \syntax{\&}id_d
+ & \hum{e=\cons{Var}(\ldots)} &=& \syntax{\&}\shum{e}
+\\ \can{\cons{EnumConst}(t,\coreXref\epsilon)} &=& id_\epsilon
+ & \hum{\cons{EnumConst}(t,\coreXref\epsilon)} &=& id_\epsilon
+\\ \can{\cons{Const}(t,c)} &=& c
+ & \hum{\cons{Const}(t,c)} &=& c 
+\\ \can{\cons{Null}(t)} &=& \syntax{NULL}
+ & \hum{\cons{Null}(t)} &=& \syntax{NULL} 
+\\ \can{\cons{Unary}(t,\diamond,e)} &=& \diamond\can e
+ & \hum{\cons{Unary}(t,\diamond,e)} &=& \diamond\hum e 
+\\ \can{\cons{PtrArith}(t,e_1,\circ,e_2)} &=& \can{e_1} \circ \can{e_2}
+ & \hum{\cons{PtrArith}(t,e_1,\circ,e_2)} &=& \hum{e_1} \circ \hum{e_2} 
+\\ \can{\cons{PtrCmp}(t,e_1,\circ,e_2)} &=& \can{e_1} \circ \can{e_2}
+ & \hum{\cons{PtrCmp}(t,e_1,\circ,e_2)} &=& \hum{e_1} \circ \hum{e_2} 
+\\ \can{\cons{Binary}(t,e_1,\circ,e_2)} &=& \can{e_1} \circ \can{e_2}
+ & \hum{\cons{Binary}(t,e_1,\circ,e_2)} &=& \hum{e_1} \circ \hum{e_2} 
+\\ \can{\cons{Member}(t,e,m)} &=& \syntax{\&}\can{e}\syntax{->}id^m_{\sigma_t}
+ & \hum{e = \cons{Member}(\ldots)} &=& \syntax{\&}\shum{e} 
+\\ \can{\cons{Array}(t,e)} &=& \syntax{\&(*}\can{e}\syntax{)[0]}
+ & \hum{\cons{Array}(t,e)} &=& \shum{e} 
+\\ \can{\cons{DeRef}(t,e)} &=& \syntax{*}\can{e}
+ & \hum{\cons{DeRef}(t,e)} &=& \shum{e} 
+\\ \can{\cons{Cast}(t,e)} &=& \syntax{(}t\syntax{)}\can{e}
+ & \hum{\cons{Cast}(t,e)} &=& \syntax{(}t\syntax{)}\hum{e} 
+\\ \can{\cons{SizeofType}(t,t')} &=& \syntax{sizeof(}t\syntax{)}
+ & \hum{\cons{SizeofType}(t,t')} &=& \syntax{sizeof(}t\syntax{)} 
+\\ \can{\cons{SizeofExpr}(t,e)} &=& \syntax{sizeof}\can{e}
+ & \hum{\cons{SizeofExpr}(t,e)} &=& \syntax{sizeof}\hum{e} 
+\\[1ex]
+&&& \shum{\cons{Var}(t,\coreXref d)} &=& id_d \\
+&&& \shum{\cons{PtrArith}(t,e_1,\syntax{+},e_2)}
+                &=& \hum{e_1}\syntax{[}\hum{e_2}\syntax{]} \\[2pt]
+\multicolumn{3}{|c|}{
+    \setbox0\vbox{\setbox2\hbox{parentheses as required by precedence}
+          \setbox4\hbox to\wd2{\hfil are implicit for both mappings\hfil}
+          \box2\vskip1pt\box4}
+    \ht0=0pt
+    \box0}
+  & \shum{\cons{Member}(t,e,m)} &=&
+  \left\{\begin{array}{@{}l@{,}l@{}}
+    \hum{e}\syntax{->}id^m_{\sigma_t} & \mbox{ for } e=\cons{DeRef}(\ldots) \\
+    \shum{e}\syntax{.}id^m_{\sigma_t} & \mbox{ otherwise}
+  \end{array}\right. \\
+&&& \shum{\mbox{any other }e} &=& \syntax{*}\hum{e} \\[2pt]
+\hline
+\end{array}\]\end{center}
+\caption{Translating \coreC expressions back to C.}
+  \label{fig:corecdisplay}
+\end{figure}
+
+That mapping produces correct yet horribly unreadable expressions with a
+lot of spurious address-of and dereference operators. Therefore, by
+default the modules that unparse \coreC (outcore and gegen) use the
+``optimizing'' rendering defined at the right side of figure
+\ref{fig:corecdisplay}.
+
+The downside of the ``optimizing'' format is that not all \coreC
+constructs are individually visible. This means that the annotated
+\coreC output in this notation cannot include the annotation
+on every subexpression. When debugging \cmix it is sometimes
+convenient to switch to the canonical representation in outcore; we provide
+a \syntax{-S} switch that does that (almost. $\cons{Array}(t,e)$ is
+rendered as a unary operator spelled \syntax{<DECAY>}).
+
+\subsection{Types}
+\label{sec:corecTypes}
+The $\cons{Abstract}(id,q)$, $\cons{Arithmetic}(id,q)$,
+and $\cons{Primitive}(id,q)$ types are
+primitive types, at least as far as \cmix is concerned.
+
+The \ansiC base types such as \syntax{signed char} and \syntax{float}
+are all \cons{Primitive} types, with the $id$ of the type record containing
+the type's full name. The exception is \syntax{void} which is represented
+as $\cons{Abstract}(\syntax{void})$.
+
+The user (or, more likely, shadow header files) can define additional
+primitive types with the special syntax
+\begin{verbatim}
+  typedef __CMIX(bar) baz ;
+\end{verbatim}
+which declares \syntax{baz} as an \emph{abstract type} with the \syntax{b},
+\syntax{a}, and \syntax{r} properties (the only one of these that
+actually does something at the moment is \syntax{a}). The type
+maps to $\cons{Primitive}(\syntax{baz})$ or
+$\cons{Abstract}(\syntax{baz})$ in \coreC, depending on whether
+it is numeric or not. The type checker differentiates between integral
+and other arithmetic abstract types, and also maintains a guess on
+whether the type is signed or not; those attributes are stored in
+a ``hidden'' (which only means: not shown in the \coreC grammar)
+field of the \cons{Primitive} type node.
+
+\cons{Enum} types represent enumerated types. Except for the output
+routines in \syntax{outcore} and \syntax{gegen}, they are treated
+mostly like primitive types.
+
+\cons{Pointer} and \cons{Array} are straight-forward---the optional
+expression in the \cons{Array} type nodes is the length of the array.
+Each of them contains the type qualifiers of the \emph{pointed-to}
+type. That is, in \coreC, ``pointer to const int'' parses as
+``(pointer to const) int'' rather than \ansiC's
+``pointer to (const int)''. As far as partial evaluation is concerned,
+this difference is not important, but the c2core translation works
+best with having the qualifiers as part of the pointer.
+
+\cons{Fun} is a function type with result and parameter types.
+\cons{FunPtr} is a pointer to function; its single subitem is always
+a \cons{Fun} type. This is also the only way \cons{Fun} types can be
+used to form other types.
+
+\cons{StructUnion} deserves some further explanation. The
+master definition for the struct or union concerned is referenced
+from the type node, so that the type tag and member names can be
+accessed. However, the type has its own private list of member \emph{types},
+allowing us to control the degree of structural sharing between types.
+This is important because we attach binding-time information to type
+nodes.
+
+\subsubsection{Structural sharing of type representation}
+\label{sec:corecTypeSharing}
+
+For the purpose of defining the rules for sharing of type nodes, we
+divide the references to type nodes in a program into ``owning'' and
+``borrowing'' references, and say that a declaration or expression
+``owns'' the type nodes that are reachable from its type field,
+following only ``owning'' references. Then:
+\begin{itemize}
+\item A local or global variable declaration owns its
+        entire type. The only borrowing references that can be
+        reached from the type node is the back edges to
+        \cons{StructUnion} nodes necessary to keep the
+        representation finite.
+\item A function declaration similarly owns its entire type.
+\item A formal parameter declation borrows
+        its type from the function's type's parameter type list.
+\item The declaration in an \cons{Alloc} statement borrows its
+        type from the relevant part of the statement's left-hand
+        expression\footnote{This does not impose any risk of
+                ``circular borrowing'', because only the
+                alloc declaration's possible subsidiaries
+                borrow from its type, and nothing outside the
+                subsidiary tree borrows from it}.
+\item A subsidiary declaration borrows
+        its type from the appropritate part of its parent's type.
+\item A \cons{Var}, \cons{Member}, \cons{Array}, or \cons{PtrArith} expression
+        owns the topmost \cons{Pointer} node of its type. The
+        pointed-to type is borrowed from the referenced declaraion
+        or the relevant part of the operand's type, repectively.
+\item A \cons{Const}, \cons{Unary}, \cons{PtrCmp}, \cons{Binary},
+        \cons{Cast}, \cons{SizeofType}, or \cons{SizeofExpr}
+        expression owns its entire type, and, in the case of
+        \cons{SizeofType}, its entire operand type.
+\item A \cons{DeRef} expression borrows its type from the
+        relevant part of its operand's type.
+\end{itemize}
+
+Examples of the type sharing can be seen at figure \ref{fig:typesharing}
+
+\begin{figure}[htbp]
+  \begin{center}
+     \ttfamily
+     \begin{tabular}{l}
+        struct node \{ \\
+        ~~int ID:~24; \\
+        ~~struct node *link; \\
+        ~~char data[20]; \\
+        \} a\_node, *a\_ptr; \\
+        /* ...~*/ \\
+        a\_ptr->data[5] \\
+        \\
+        \\
+     \end{tabular}
+
+     \epsfig{file=sharing.eps,height=16.5cm,width=15.5cm}
+  \end{center}
+  \caption{Type sharing example}
+  \label{fig:typesharing}
+\end{figure}
+
+\subsection{Implementation level (1999-02-18)}
+The above section describe the current implementation of Core C.
+        
+\end{docpart}
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 

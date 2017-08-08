@@ -1,0 +1,153 @@
+## @configure_input@ -*- Makefile -*-
+## Authors:  Jens Peter Secher (jpsecher@diku.dk)
+##           Henning Makholm (makholm@diku.dk)
+##           Arne John Glenstrup (panic@diku.dk)
+## Content:  C-Mix system: Common top matter for generated makefiles
+##
+## Copyright © 1999. The TOPPS group at DIKU, U of Copenhagen.
+## Redistribution and modification are allowed under certain
+## terms; see the file COPYING.cmix for details.
+
+#------------------------------------------
+# TOOLS USED IN MAKEFILE
+#------------------------------------------
+
+# Part 0: compatibility
+@SET_MAKE@
+SHELL		= /bin/sh
+
+# Part 1. Standard UNIX tools
+# It should not be necessary to override these, but one never knows
+
+CP		= cp
+MV		= mv
+RM		= rm -f
+LN		= ln -f
+LN_S		= ln -s
+SED		= sed
+TOUCH		= touch
+CHMOD		= chmod
+STRIP		= strip
+TAR		= tar cf
+GZIP		= gzip
+GUNZIP		= gunzip
+
+# Part 2: Nonstandard tools, which are not autoconfigurable
+
+FIG2PS		= fig2dev -L ps
+LATEX		= TEXINPUTS=$(srcdir):$$TEXINPUTS latex
+DVIPS		= dvips
+
+# Part 3: Autoconfed tools. Not all of these are expanded in all makefiles.
+
+PERL		= @PERL@
+YACC		= @YACC@
+LEX		= @LEX@
+CPP		= @STDCPP@
+CXX		= @CXX@
+CC		= @CC@
+AR		= @AR@
+RANLIB		= @RANLIB@
+MKDEP		= @MKDEP@
+INSTALL		= @INSTALL@
+
+INSTALL_PROGRAM	= @INSTALL_PROGRAM@
+INSTALL_SCRIPT  = @INSTALL_SCRIPT@
+INSTALL_DATA	= @INSTALL_DATA@
+STRIPFLAG	= -s
+
+# Part 4: Flags
+
+CPPFLAGS	= @CPPFLAGS@
+CFLAGS		= @CFLAGS@
+CXXFLAGS	= @CXXFLAGS@
+LDFLAGS		= @LDFLAGS@
+STATICLDFLAGS	= $(LDFLAGS) -static
+MKDEPFLAGS	=
+
+#------------------------------------------
+# DIRECTORY INFORMATION
+#------------------------------------------
+
+srcdir		= @srcdir@
+VPATH		= @srcdir@
+top_srcdir	= @top_srcdir@@cmix_oneup@
+
+prefix		= @prefix@
+exec_prefix	= @exec_prefix@
+
+bindir		= @bindir@
+datadir		= @datadir@
+includedir	= @includedir@
+libdir		= @libdir@
+libexecdir	= @libexecdir@
+mandir		= @mandir@
+
+#------------------------------------------
+# MISCELLANEOUS
+#------------------------------------------
+
+EXEEXT		= @EXEEXT@
+HAVE_LONG_FILE_NAMES = @HAVE_LONG_FILE_NAMES@
+
+#------------------------------------------
+# CANONICAL TARGETS
+#------------------------------------------
+
+main_goal:
+
+floodingtargets = mostlyclean clean distclean toolclean realclean ajour depend
+# common recursion through subdirectories can be implemented for all
+# flooding targets with a single local rule such as
+# $(floodingtargets):
+#         cd some_subdir && $(MAKE) $@
+
+.PHONY: Mostlyclean Clean Distclean Toolclean Realclean Ajour Depend
+.PHONY: $(floodingtargets) all install uninstall info dvi ps dist check
+
+# empty rules for the local cleansing actions. We hope that
+# these will prevent old makes from complaining that they can't
+# make the file if they find no explicit commands and still
+# do not understand .PHONY
+Mostlyclean:
+Clean: Mostlyclean
+Distclean: Clean
+Toolclean: Clean
+Realclean: Distclean Toolclean
+Ajour:
+Depend:
+mostlyclean: Mostlyclean
+clean: Clean
+distclean: Distclean
+toolclean: Toolclean
+realclean: Realclean
+ajour: Ajour
+depend: Depend
+
+# Common handling of install-strip
+.PHONY: install-strip install-nostrip
+install-strip:
+	$(MAKE) install STRIPFLAG=-s
+install-nostrip:
+	$(MAKE) install STRIPFLAG=
+
+# Cancel the built-in suffexes, but avoid complains from makes that think
+# it is wrong to have no suffixes at all.
+.SUFFIXES:
+.SUFFIXES: not_a_real_suffix
+
+# this rule allows a makefile to think it can make the config.status or
+# cmixconf.h files in its parent directories itself. The point is that if
+# they have already been deleted as part of a 'make distclean' the
+# subdirectory Makefiles should be able to consider themselves up-to-date
+# enough to commit their requested suicide.
+../config.status ../cmixconf.h:
+	:
+
+# declare common dependencies for the configuration system
+GNUmakefile Makefile: $(top_srcdir)/Makefile.top
+configure: $(top_srcdir)/aclocal.m4
+
+#------------------------------------------#
+# END OF CANONICAL TOP MATTER              #
+#------------------------------------------#

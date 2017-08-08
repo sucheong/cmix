@@ -1,0 +1,49 @@
+AC_REVISION([$Id: configure.in,v 1.6 1999/05/04 22:54:36 makholm Exp $])
+dnl Authors:  Jens Peter Secher (jpsecher@diku.dk)
+dnl           Arne Glenstrup (panic@diku.dk)
+dnl           Henning Makholm (makholm@diku.dk)
+dnl Content:  C-Mix system: source for 'configure' in binary distributions
+dnl
+dnl Copyright © 1998. The TOPPS group at DIKU, U of Copenhagen.
+dnl Redistribution and modification are allowed under certain
+dnl terms; see the file COPYING.cmix for details.
+
+dnl Process this file with autoconf to produce a configure script.
+
+AC_INIT(cmixdist.bin)
+AC_MSG_CHECKING(which binaries to use)
+EXEPREFIX=
+if ./cmixdist.bin > /dev/null 2>&1
+then
+  :
+else
+  if [ -f scmixdist.bin ] && ./scmixdist.bin >/dev/null 2>&1
+  then
+    EXEPREFIX=s
+  else
+    AC_MSG_ERROR(the binaries in this binary distribution cannot execute here)
+  fi
+fi
+if test x$EXEPREFIX = xs
+then
+  AC_MSG_RESULT(statically linked)
+else
+  AC_MSG_RESULT(dynamically linked)
+fi
+AC_SUBST(EXEPREFIX)
+
+# find a C preprocessor to build into the trampoline script
+DIKU_PATH_STDCPP
+AC_PROG_INSTALL
+
+dnl remove trailing slashes
+define(r_t_s,[$1=`echo ${$1} | sed 's:/$::'`])dnl
+r_t_s(prefix)
+r_t_s(exec_prefix)
+r_t_s(bindir)
+r_t_s(libdir)
+r_t_s(libexecdir)
+r_t_s(datadir)
+r_t_s(includedir)
+AC_EXEEXT
+AC_OUTPUT(Makefile)

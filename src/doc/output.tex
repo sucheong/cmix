@@ -1,0 +1,233 @@
+% File: output.tex
+% Time-stamp: <98/03/04 16:02:37 panic>
+% $Id: output.tex,v 1.3 1999/04/21 13:12:12 jpsecher Exp $
+
+\providecommand{\docpart}{\input{separatehead}}
+\begin{docpart}
+
+\begin{center}
+  \fbox{\huge\textsl{THIS SECTION IS OUT-OF-DATE}}    
+\end{center}
+
+\section{Representing output}
+\label{sec:output}
+The \verb|Output| class is an abstract representation of a piece of
+data and a number of annotations on this data. For instance, a piece
+of data could be a program, and the annotations could be results of
+various analyses on this program. 
+
+The purpose of this representation is to be able to represent a piece
+of data together with all its annotations, and thus postpone the
+decision of which annotations will be relevant. For instance, a
+hypertext browser can view a program together with information about
+what objects each declaration can point to; or a program can be
+annotated with colours that represent the binding-times of each
+construct in the program. In the case of points-to information, it is
+highly desirable for an annotation to be able to refer back to the
+main piece of data. This is illustrated in
+figure~\ref{fig:pgm-pa-bta}.
+
+\begin{figure}[htbp]
+  \begin{center}
+    \leavevmode
+    \epsfig{file=pgm-pa-bta.eps,width=0.7\textwidth}
+    \caption{A program with two sets of annotations.}
+    \label{fig:pgm-pa-bta}
+  \end{center}
+\end{figure}
+
+To be able to select a particular annotation set (and thus ignore
+other annotation sets), it must be a requirement that annotations only
+refer to the main piece of data and/or other annotations in the same
+annotation set.
+
+The selection of relevant annotations and how these are visualised is
+carried out by a \emph{filter} or \emph{viewer}, see
+section~\ref{sec:filter}.
+
+\subsection{The output classes}
+What we want to represent is essentially annotated text, so an
+abstract output representation must have the following
+characteristics.
+
+\begin{itemize}
+\item Data consists of a sequence of smaller pieces of information.
+\item A piece of data can be a string of text or a newline.
+\item Several pieces of data can be grouped together and their
+  (visual) relationship can be expressed.
+\item Each piece of data can have a number of annotations attached.
+  Each such annotation has a specific type.
+\item All annotations associated with a piece of data must have
+  different type.
+\item Each annotation consists of smaller pieces of data. Such pieces
+  can refer to portions of the main data and/or to other annotations
+  of the same type.
+\end{itemize}
+
+Hence it is natural to represent output as trees, where the leaves
+are text string, and the interior nodes nodes express a relationship
+between subtrees. It would also be handy to be able to annotate text
+strings with attributes such as bold, italics, \etc  
+
+Entities of the \texttt{Output} class can be categorised as follows.
+
+\begin{itemize}
+\item A block is a sequence of output trees and It can optionally be
+  indented by a given amount. If the output interpreter need to break
+  lines inside a block, it can be done in two ways: If the block is
+  \emph{consistent}, any shortage of line space will force all
+  elements of the block to appear on a separate line. If the block is
+  \emph{inconsistent}, line breaks are only inserted to avoid over-full
+  lines.
+\item A break code can be put inside a block, which means that the
+  output interpreter can insert space or break an over-full line here.
+  If the whole block fits on the line, each break code is replaced by
+  the specified number of spaces.
+  
+  If the enclosing block does not fit on the line and the block is
+  \begin{description}
+  \item [consistent,] each break code is replaced by a newline and
+    each line is indented to the indentation level plus the block
+    offset. [Maybe this is not quite right...]
+  \item [inconsistent,] if the element fits on the current line, the
+    specified number of spaces is output. If not, a newline is issued
+    and the new line is indented to the current indentation level plus
+    the block offset plus the break offset.
+  \end{description}
+\item A text is a character string with an attribute
+  (see~\ref{sec:textattribute}).
+\item A linked output is a piece of output that is associated to
+  a list of anchors (see~\ref{sec:anchors}).
+\item An anchored output is a piece of output that has an unique
+  anchor attached to it.
+\item A hard newline is a piece of output.
+\end{itemize}
+
+  \begin{verbatim}
+      struct Output {
+        enum Mark { Block,Break,HardNL,Text,Anno,Label };
+        enum BlockType { Consistent, Inconsistent };
+
+        Output(list<Output*>*, unsigned = 0, BlockType = Consistent); // Block.
+        Output(unsigned offset, unsigned spaces); // Break.
+        Output(const char*, TextAttribute*); // Text.
+        Output(Output*, list<Anchor*>*); // Associate a list of anchors
+                                         // with the subtree.
+        Output(Anchor*,Output*); // Attach an existing anchor to a tree.
+        Output(); // HardNL
+
+        // Lookup
+        BlockType type();
+        unsigned level();
+        list<Output*>* blocks();
+        unsigned break_offset();
+        const char* text();
+        TextAttribute* attribute();
+        Output* anno_subtree();
+        list<Anchor*>* anno_anchors();
+        Anchor* label();
+        Output* label_subtree();
+
+        friend Output* oconcat(Output*,Output*);
+        friend Output* oconcat(list<Output*>*);
+      };
+      \end{verbatim}
+
+\subsubsection{Output types}
+\label{sec:outputtypes}
+Output is collected in an \texttt{OutputContainer} class.  As
+described earlier, it should be possible to group output into several
+groups, depending on the nature and/or origin of the output. This is
+done by demanding that each piece of output appended to an
+\texttt{OutputContainer} must be accompanied by an \emph{output type}.
+Such a type consists of a symbolic name and a parent identification
+such that the types are organized in a tree. The output type tree for
+figure~\ref{fig:pgm-pa-bta} could be
+
+\[
+\xymatrix{
+  & Program \ar[ld] \ar[rd] & & \\
+  BT\!A \ar[d] \ar[rd] & & P\!A \\
+  Static & Dynamic & \\
+}
+\]
+
+\noindent
+Notice that the output type $BT\!A$ is used solely to group the two
+different binding-times under. As stated earlier, the purpose of this
+is to be able to select a certain \emph{view} of the program: It
+should be possible to instruct the output formatter only to consider
+(and thus view) a portion of the output. Such a portion must be a
+substree from the root to some depth in the output type tree. This
+restriction means that a piece of output only can refer to other
+pieces of output of the same type or of ancestor type. Reference
+points are called \emph{anchors}.
+
+\begin{verbatim}
+struct OType {
+    OType(const char*, OType*);
+    const OType* parent();
+    const list<OType*>& children();
+    const char* name();
+    unsigned number();
+    friend bool operator==(OType&,OType&);
+};
+
+\end{verbatim}
+
+\subsubsection{Anchors}
+\label{sec:anchors}
+An anchors is thus a unique label in some piece of output and a type
+that tells us which group of output we should search for this
+label. The associated type can also be used to ``trim'' a set of
+outputs when a certain view has been decided upon.
+
+\begin{verbatim}
+struct Anchor {
+    Anchor(OType*);
+    OType* isIn();
+    unsigned anchor();
+};
+\end{verbatim}
+
+\subsubsection{Text Attributes}
+\label{sec:textattribute}
+A text attribute is simply a symbolic name that can be used to make
+distinctions between pieces of text, \eg variable names, keywords,
+\etc
+
+\begin{verbatim}
+struct TextAttribute {
+    TextAttribute(const char*, unsigned);
+};
+\end{verbatim}
+
+\subsubsection{Output containers}
+\label{sec:outputcontainer}
+An output container holds a set of typed output trees and can export
+such a set to a linear \textsc{ascii} format, \eg a file. To create an
+output container, one needs to specify (the root of) the output type
+tree that the container can work on.
+
+\begin{verbatim}
+struct OutputContainer {
+    OutputContainer(OType*);
+    void add(Output*,OType*);
+    friend ostream& operator<<(ostream&,OutputContainer*);
+};
+\end{verbatim}
+
+\subsection{Filters}
+\label{sec:filter}
+A filter is something that interprets the contents of an output
+container. One could imagine an interactive tool that lets the user
+select a type subtree, \ie which annotations she wants to see, and
+possibly select the appearance of text by mapping text attributes to
+specific fonts; or map subtypes to specific colours.
+
+\end{docpart}
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 
+

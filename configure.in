@@ -1,0 +1,109 @@
+AC_REVISION([$Id: configure.in,v 1.4 1999/07/08 14:30:07 makholm Exp $])
+dnl Authors:  Jens Peter Secher (jpsecher@diku.dk)
+dnl           Arne Glenstrup (panic@diku.dk)
+dnl           Henning Makholm (makholm@diku.dk)
+dnl Content:  C-Mix system: source code for main `configure' script
+dnl
+dnl Copyright © 1998. The TOPPS group at DIKU, U of Copenhagen.
+dnl Redistribution and modification are allowed under certain
+dnl terms; see the file COPYING.cmix for details.
+
+dnl Process this file with autoconf to produce a configure script.
+
+AC_INIT(release-stamp)
+
+AC_PROG_MAKE_SET
+AC_PATH_PROG(PERL,perl,there-doesnt-seem-to-be-any-perl-here)
+
+AC_CONFIG_SUBDIRS(src testsuite examples doc)
+
+VENDOR='(none)'
+AC_ARG_ENABLE(vendor,
+  [ RPM packaging options:
+  --enable-vendor=STRING        Sets the vendor string for packaging],
+  [case "x$enableval" in
+    xyes)] AC_MSG_WARN(dnl
+Please use --enable-vendor=<vendor-string> to specify a vendor) ;;
+    [xno) ;;
+    *) VENDOR=$enableval ;;
+  esac])
+AC_SUBST(VENDOR)
+PACKAGER='(none)'
+AC_ARG_ENABLE(packager,
+  [  --enable-packager=STRING      Sets the packager string for packaging],
+  [case "x$enableval" in
+    xyes)] AC_MSG_WARN(dnl
+Please use --enable-packager=<packager-string> to specify a packager) ;;
+    [xno) ;;
+    *) PACKAGER=$enableval ;;
+  esac])
+AC_SUBST(PACKAGER)
+DISTRIBUTION='(none)'
+AC_ARG_ENABLE(distribution,
+  [  --enable-distribution=STRING  Sets the distribution string for packaging],
+  [case "x$enableval" in
+    xyes)] AC_MSG_WARN(dnl
+Please use --enable-distribution=<distribution-string> to specify a distribution) ;;
+    [xno) ;;
+    *) DISTRIBUTION=$enableval ;;
+  esac])
+AC_SUBST(DISTRIBUTION)
+
+# Specific distributions:
+AC_ARG_ENABLE(cmix-dist,
+  [  --enable-cmix-dist            Canned settings for DIKU-produced RPMs],
+  # Sets the vendor, packager and distribution strings to
+  # the C-Mix Team etc.
+  if test "x$enableval" != x
+  [then
+    VENDOR='(none)'
+    PACKAGER='The C-Mix Team <cmix@diku.dk>'
+    DISTRIBUTION='DIKU, University of Copenhagen'
+  fi])
+
+AC_ARG_ENABLE(rhcn-dist,
+  [  --enable-rhcn-dist            Canned settings for RH Contrib|Net RPMs],
+# Sets the vendor, packager and distribution strings to
+# the Red Hat Contrib|Net etc.
+  if test "x$enableval" != x
+  [then
+    VENDOR='Red Hat Software'
+    PACKAGER='Red Hat Contrib|Net <rhcn-bugs@redhat.com>'
+    DISTRIBUTION='Red Hat Contrib|Net'
+  fi])
+# Find an rpmrc file
+if test -r $HOME/.rpmrc
+then
+  RPMRC=$HOME/.rpmrc
+elif test -r /etc/rpmrc
+then
+  RPMRC=/etc/rpmrc
+else
+  RPMRC=/dev/null
+fi
+AC_SUBST(RPMRC)
+
+AC_ARG_WITH(thisisnotarealoption-ignore,
+  [ Configuring the example makefiles:
+  --with-exflags='foo'    flags needed to locate speclib
+  --without-exflags       no flags are needed to locate speclib
+  --with-x                use the X Window System
+  --enable-srgp           use the SRGP graphics API if available
+  --enable-ptc            use the PTC graphics API if available
+  --enable-opengl         use the OpenGL/Mesa graphics API if available
+ Configuring the C-Mix source:
+  --disable-long-double   avoids long double in speclib interface
+  --enable-implicit-templates
+                          compiles WITHOUT -fno-implicit-templates],:)
+
+AC_SYS_LONG_FILE_NAMES
+HAVE_LONG_FILE_NAMES=$ac_cv_sys_long_file_names
+AC_SUBST(HAVE_LONG_FILE_NAMES)
+
+AC_CANONICAL_HOST
+RPMBUILDARCH=$host_cpu
+AC_SUBST(RPMBUILDARCH)
+
+cmix_oneup=
+AC_SUBST(cmix_oneup)
+AC_OUTPUT(Makefile:Makefile.top:Makefile.in)

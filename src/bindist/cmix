@@ -1,0 +1,21 @@
+#! /bin/sh
+# Edit this script so that various paths point to the right places
+
+# EXEEXT is the .exe extension for binaries (empty for most systems)
+: ${EXEEXT=}
+
+# CPP is the preprocessor command that C-Mix will use for preprocessing
+# its C input
+: ${CPP=/usr/lib/cpp} ; export CPP
+
+# CMIX_SHADOW_DIR is the directory where the shadow headers are installed
+# (The shadow headers are the .h files in share/cmix in the distribution
+# archive) 
+: ${CMIX_SHADOW_DIR=/usr/local/share/cmix/shadow} ; export CMIX_SHADOW_DIR
+
+CMIX_BINARY=/usr/local/lib/cmix${EXEEXT}
+# CMIX_BINARY is the path to the real C-Mix/II binary
+
+#quote arguments and chain to the real c-mix
+for arg do args="$args '$arg'" ; done
+eval "exec $CMIX_BINARY $args"

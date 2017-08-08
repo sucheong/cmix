@@ -1,0 +1,4 @@
+- To make a new debug stream (and option), insert a line options.org:
+    %DEBUGSTREAM mymodule 2
+  which will create a debugstream_mymodule in options.h with two
+  verbosity levels

@@ -1,0 +1,102 @@
+% File: structsort.tex
+% Time-stamp: 
+% $Id: structsort.tex,v 1.2 1999/03/16 22:21:19 makholm Exp $
+
+\providecommand{\docpart}{\input{separatehead}}
+\begin{docpart}
+
+\section{Structure definition sorting}
+\label{sec:StructureDefinitionSorting}
+The structure sorting phase is a helper phase that takes place just
+before the gegen phase. Its purpose is to perform a ``topological
+sort'' on the final list of structure or union definition. This is
+done to ensure that the generating extension will declare the
+structures in the correct order, such that \eg the definition
+\begin{verbatim}
+struct foo {
+   struct bar baz ;
+}
+\end{verbatim}
+will not be written out before struct bar has been declared.
+
+\subsection{The ``sequence number'' strategy}
+Theoretically the order we want is a topological sort according to
+the ``containment ordering'' defined by ``struct $A$
+precedes struct $B$ iff struct $B$constains a member whose type is
+`(array of)$^n$ struct $A$' for
+some $n\geq 0$''.
+
+This is implemented by assigning \emph{sequence numbers} to the struct 
+definitions so that if struct $A$ precedes struct $B$, then $A$ will have a
+lower sequence number than $B$. Then we can perform the topological
+sort simply by sorting by sequence number.
+
+We assign the sequence numbers in the C parser, then check in the type
+checking phase that the connection between the sequence numbers and
+the ``contaiment ordering'' hold. The sequence numbers are then
+carried through to \coreC and simply copied when copies of structures
+are made during the various phases. After struct definition have been
+manipulated we have a different ``containment ordering'' but it is
+easily seen, by inspection of the different phase definitions, that
+the projection of the final containment ordering to the original
+source definitions is a subset of the contaiment ordering that was
+used in the type cheker. Thus the sequence numbers still have the
+required property with respect to the final containment ordering.
+
+\subsection{Assigning sequence numbers}
+
+In the parser phase we simply maintain a counter and assign ascending
+sequence numbers in the order we see the closing brace of the
+definition of each structure. We may see the same structure defined
+multiple times if there are more than one source file; in that case
+the first definition we see is the one that counts.
+
+This strategy works if the input is correct according to \ansiC;
+\ansiC requires the types of members to be object types, and
+`(array of)$^n$ struct T' is an object type only if a definition
+of struct T is in scope at the point of the member declaration.
+Being in scope implies that a definition appears textually earlier in
+the file, thus the connection to the containment ordering holds.
+
+\subsection{Checking the sequence numbers}
+
+We do not implement the \ansiC semantics regarding the scope of
+structure definitions---though we do (try to) implement the scope
+rules of structure \emph{declarations}. This means that we need to
+check the connection between sequence numbers and containment ordering
+directly in the type checking phase.
+
+Thus, we accept some programs that are not correct \ansiC, but since
+we are able to resolve structures and generate correct generating
+extensions even for those programs, we do not view this as much of
+a problem.
+
+\subsection{The implementation of the sorting phase}
+
+We leave the actual sorting to the \texttt{qsort()} library function.
+
+\subsection{Alternative strategies}
+
+Another strategy that was considered was coding the parser phase such
+that the proper topological ordering held from the beginning.
+This strategy was rejected because a number of subsequent phases
+make changes to the userdecl list, sometimes rather drastic.
+
+There would be a lot of possibilities for inadvertantly introducing bugs
+while restructuring code that didnt \emph{seem} to have anything to
+with the order of structure declarations. Indeed, even getting the
+parser to produce the list correctly would depend very subtly on a
+lot of minor details that look rather unimportant in their immediate
+context.
+
+\subsection{Implementation level, 1999-03-16}
+
+The above description fits the current implementation of the structure
+sorting phase.
+
+\end{docpart}
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 
+

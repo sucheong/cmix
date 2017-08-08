@@ -1,0 +1,38 @@
+* Overview of the CVS tree for C-Mix/II
+* Directories marked with '*' are not distributed
+*
+  cmix-N.N.N		Root directory, main configure and makefile
+    +-doc		Various generally C-Mix-related documents
+*   |   +-demo		Demonstration document for C-Mix
+*   |   +-exercises	Exercises document for C-Mix
+    |   +-manual	User manual for the C-Mix system
+    +-examples		Example sources used in exercises+demo
+    |   +-pow		The classic power function example
+    |   +-printf	The almost-as-classic printf example
+    |   +-binsearch	Binary search example
+    |   +-ack		Ackermann function example
+    |   +-turing	Turing machine interpreter example
+    |   +-cint		C interpreter example
+    |   +-matrix	Numeric computation solving Ax=b
+    |   +-fft		Numeric computation FFT
+    |   +-ray		A ray tracer
+*   +-misc		Various stuff that has connection to C-Mix
+*   |   +-ERCIM		Article in ERCIM news
+*   |   +-LNCS98	Article from PE Summer school 98
+*   |   +-PE98		Summer school notes, exercises and other stuff
+*   |   +-STTT		Article in STTT'98
+*   |   +-tests		Old testfiles (to be incorporated in the testsuite)
+    +-src		Source tree, build and config administrativa
+    |   +-analyzer	Source for the main analyzer+cogen program
+    |   +-speclib	Source for the generating extension support library
+*   |   |   +-ununparse Pseudo-generator for testing restructuring phase
+    |   +-cmixshow	Source for the annotation browser
+    |   +-doc		Documentation TeX sources
+    |   +-shadow	Shadow headers
+    |   |   +-sys	Shadow headers for <sys/*.h>
+    |   +-bindist	The infrastructure to make binary distributions
+    +-testsuite		Regression testing system
+        +-cmix-*        Individual test sections
+        +-config	Configuration files for DejaGnu
+        +-doc		Documentation of the testsuite mechanism
+        +-lib		Testsuite library functions

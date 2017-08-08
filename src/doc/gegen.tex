@@ -1,0 +1,1425 @@
+\providecommand{\docpart}{\input{separatehead}}
+\title{The Generating Extension and How To Generate It}
+\author{Henning Makholm}
+\begin{docpart}
+\maketitle
+
+\MakeShortVerb{/}
+\section{The Gegen phase}
+\label{sec:HowToGenerate}
+\index{gegen}\index{generating extension}
+
+\def\Pgen{$\hbox{P}_{\textit{\small gen}}$\xspace}
+
+The \emph{generating extension generator}, or \emph{gegen} for short, takes
+as input the binding-time annotated Core C program (and other analysis
+results) and produces a generating extension on the basis of the
+annotations. For brevity, the generating extension will be called
+\Pgen.
+
+Gegen is divided into several submodules which share information
+through the common header file /gegen.h/. The header file defines
+class /GegenEnv/ to which most of the submodules contribute member
+functions.
+
+The submodules are, --
+\begin{description}
+\item[/gg-expr/] handles the translation of \coreC types and
+expressions into the representations they have in \Pgen. It defines
+a special, iostream-like, class /GegenStream/ which keeps an internal
+state for managing the output of p-gen code that uses the speclib to
+create residual code snippets.
+\item[/gg-cascades/] is a small submodule that defines useful idioms
+that other modules use to support statically indexed arrays.
+\item[/gg-struct/] performs various jobs related to struct, union,
+and enum types. It sees to that they are declared properly in \Pgen
+and the residual program. It manages the names of residual structures'
+members. It creates functions that helps initialize the \Pgen
+counterparts of residual struct and union objects, etc.
+\item[/gg-memo/] takes care of all work related to the memoisation
+of static values.
+\item[/gg-decl/] writes out code to construct proper declarations
+for residual variables. It also manages the declaration of the subject
+program's global variables in \Pgen.
+\item[/gg-code/] writes code for \coreC statements and functions. It
+takes care of function inlining, and -- with help from /gg-memo/ for
+the dirty parts -- writes out pending-list loop code and function
+sharing code where necessary.
+\item[/gegen/] contains code to tie all of the above together, and
+code for some small helper functions that weren't naturally placed
+otherwhere.
+\end{description}
+
+The detailed description of gegen that follows is organised by these
+submodules. Each section begin by describing the external interface
+of the submodule as seen by the other submodules, \emph{e.g.}, the
+actual C code emitted is largely considered an ``implementation
+detail'' in this description. Then what the emitted C code looks
+like is described. At the end of each section there are tips for
+understanding the source code for the submodule.
+
+Previous to the split into submodules, the documentation
+tried to follow the order in which things appear in the \Pgen source,
+which was not very easy to follow after all. Hopefully this logical
+organisation is easier to read.
+
+\subsection{The type mapping}
+\label{sec:gegen:TheTypeMapping}
+
+Before beginning to describe the individual submodules it is important
+to describe the fundamental relationship between the binding-time
+annotated \coreC types of things, and the types the same things will
+have in \Pgen.
+
+\begin{figure}[htb]\begin{center}\begin{tabular}{|c|c|c|c|}
+\hline
+Binding-time & Variable type & Expression type & Type $[\![T]\!]$ in the \\
+annotated type $T$) & $[T]$ in \Pgen & $[T]^*$ in \Pgen & residual program \\
+\hline
+\hline
+/int/$_s$ & /int/ & /int/ &  \\ \hline
+/int/$_d$ & /Code/ & /Code/ & /int/ \\ \hline \hline
+pointer$_s$ to $T'$ & pointer to $[T']$ & pointer to $[T']$ & \\ \hline
+pointer$_d$ to $T'$ & /Code/ & /Code/ & pointer to $[\![T']\!]$ \\ \hline\hline
+array$_s[c]$ of $T'$ & array$[c]$ of $[T']$ &
+    & $c$ copies of $[\![T']\!]$ \\ \hline
+array$_d[c]$ of $T'$ & /Code/ &
+    & array$[c]$ of $[\![T']\!]$ \\ \hline\hline
+struct S$_s$ & /struct S/ & /struct S/ & \\ \hline
+struct S$_d$ & shadow struct$^\dag$ & /Code/ & /struct S/ \\ \hline\hline
+union S$_s$ & /union S/ & /union S/ &  \\ \hline
+union S$_d$ & shadow struct$^\dag$ & /Code/ & /union S/ \\ \hline\hline
+function$_s$ from & function from & &  \\
+$(T'\ldots)$ to $T''$ & $([T']^*\ldots)$ to $[T'']^*$ & & \\ \hline
+function$_d$ from & & & function from \\
+$(T'\ldots)$ to $T''$ & & & $([\![T']\!]\ldots)$ to $[\![T'']\!]$ \\ \hline
+\end{tabular}\end{center}
+\caption{The type mapping}
+\label{fig:typeRelationship}
+\end{figure}
+
+This is depicted in figure \ref{fig:typeRelationship}, and what this 
+figure says about /int/ also applies to other ``simple'' type, that
+is, basic types, abstract types, and enum types.
+
+The reader will notice that the figure has two columns for the
+residual version of a type. The $[T]$ column is the standard mapping;
+it is the one used for \emph{variables} declared in the
+\coreC program. In this mapping, when a type maps to /Code/ this
+/Code/ object will at specialization time contain the name of the
+corresponding residual variable.
+
+The complex point about the variable type mapping is the way struct
+and union types are handled. Each residual struct or union type maps
+to a \Pgen struct (even if it was originally a union) whose members'
+types are the ``variable'' versions of the subject structure's member
+types. In addition to this, the shadow struct also contains a member
+called /cmix/ of type /Code/. At specialization time this member
+contains the name of the entire residual struct or union, while the
+/Code/s inside the other members will be residual expressions denoting
+individual members of the struct or union. The idea behind this is
+that static pointers will be able to point to the members structure
+even though the the structure itself is ``dynamic''.
+
+The other type mapping for \Pgen is used for the value of \coreC
+\emph{expressions}. Expressions cannot have array or function type,
+which is why $[T]^*$ is not defined for these types. For static values
+the two mappings are the same, so the only place the expression type
+mapping is important is in the case of dynamic parameters and return
+values of specializable functions.
+
+The tricky thing about dynamic parameters to specializable functions
+is that there \emph{is} something present at their place in the
+corresponding \Pgen function's parameter list, but this ``something''
+does \emph{not} represent a residual parameter object. Rather it
+represents the actual expression used as argument in the function
+call. This is because the \Pgen function decides by itself whether
+to unfold the function call during specialization or create a residual
+function to be called. In either case a real residual variable will
+be created (and it will be represented by a standard local variable in
+the \Pgen function) but the way this is done in practise differs.
+So it is more convenient to simply hand the actual argument expression
+to the \Pgen function and let that do the right thing with it.
+
+The practical consequence of this is that dynamic function parameters
+should always be /Code/ and never shadow structs---even though the
+parameter is a dynamic struct S, the caller may have to create a
+complex residual expression for finding the real struct S residually,
+and no shadow struct may be at hand.
+
+Similar reasoning lead to the decision that shadow structs should
+not be used as function return types.
+
+\smallskip
+
+Turning to the rightmost column of figure \ref{fig:typeRelationship},
+the mapping to types in the residual program should be
+straightforward. 
+
+Empty space in the $[\![T]\!]$ column means that values and variables
+of the corresponding type are specialized completely away from the
+residual program.
+
+Note, though, that statically indexed arrays \emph{may} cause
+something to exist in the residual program. For example, a variable
+of type ``array$_s$[5] of /int/$_d$'' will produce 5 separate /int/
+variables in the residual program.
+
+If, however, the type is, \eg, ``array$_s[42]$ of /short/$_s$'', then the
+variable maps to 42 times nothing in the residual program, \ie, it
+still disappears. This is characteristic of our handling of arrays
+with static subscripting: many aspects of types are transitive
+through ``array$_s$'' components.
+
+\subsection{gg-expr: printing expressions and types}
+
+Before we can describe the interface between /gg-expr/ and the
+rest of Gegen we need to summarize how \Pgen is expected to
+build residual expressions.
+
+\subsubsection{The code generation model in speclib}
+
+The statements and expressions in the residual program as it is
+built by the generating functions consist of trees (or rather, DAGs)
+with the following types of nodes:
+\begin{description}
+\item[name] nodes are leaves and are replaced with a ``suitably
+    uniqe'' indentifier. They are filled into the \Pgen variables
+    that represent residual variables as these are initialized.
+\item[lift] leaves of various kind represent numerical and character
+    constants that originate in lifts.
+\item[inner] nodes can have children. They are labeled with a
+    string in which question marks define ``holes'' where the
+    node's children are insert when the residual program is
+    eventually written out. The string can be arbitrary and is
+    often complex, such as /"?*(?-42)/ /+/ /sizeof(int/ /(*)[?])"/.
+\end{description}
+
+Apart from the primitives that create ``name'' and ``lift'' nodes,
+the speclib functions that generate code---such as /cmixStmt/ which
+emits a simple statement to the current function, or /cmixIf/ which
+produces a residual conditional---all come bundled with the
+creation of an ``inner'' node. The parameter list for these functions
+end in ``/,char const*,.../'', where the last explicit parameter
+is the label string and is followed by as many /Code/ arguments
+as there are question marks in the string.
+
+This design minimizes the extent to which \Pgen has to manipulate
+the expression and declaration syntax of C. However, it also places
+special requirements in gegen, as expressions cannot simply
+be printed with a normal inorder traversal. For example, the
+expression /1==x*y+z/, where /x/ and /y/ are static and /z/ dynamic,
+must end up something like
+$$/cmixMkExp("1==?+?",cmixLiftSigned(x*y),z)/.$$
+One sees that the expression subsection of gegen needs to be able
+to postpone parts of expressions until after the skeleton string
+for the entire code bit has been constructed.
+
+\subsubsection{External interface to gg-expr}
+
+The /GegenStream/ class is /gg-expr/s main interface to the rest of
+the world. A /GegenStream/ behaves in some contexts simlarly to
+a standard C++ /ostream/: one can print strings, characters, and
+numbers to it with the /<</ operator. However, there are also other
+expressions one can print:
+\begin{description}
+\item[/enter/] ``Printing'' this word (the mechanism is similar to
+  the standard library's /endl/ construct) outputs a quote and
+  switches an internal flag from ``\Pgen mode'' to ``residual-code
+  mode''. In residual-code mode the /GegenStream/ maintains a
+  list of postponed subexpressions which have yet only been rendered
+  as holes in the skeleton string.
+\item[/EmitExpr(/\textit{\mdseries e}/,/\textit{\mdseries{precedence}}/)/]
+  Prints the \coreC expression \textit{e} according to the current
+  mode: if in \Pgen mode the entire expression is printed; in
+  residual mode parts of the expression may be postponed and replaced
+  by lifts. The \textit{precedence} parameter controls whether the
+  expression will be enclosed in parantheses; it can be omitted when
+  the client knows that parentheses are never necessary.
+\item[/EmitDeref(/\textit{\mdseries e}/,/\textit{\mdseries{precedence}}/)/]
+  This is equivalent to /EmitExpr/, but implicitly applies the unary
+  /*/ operator to the expression. This way the usual simplifications
+  of the \coreC rendering algorithm may succeed in merging this
+  /*/ with the topmost operator of the expression, so the generated
+  code makes full use of C's lvalue expression syntax.
+\item[\textit{\mdseries i}]
+  where \textit{i} is a \coreC initializer.
+\item[/pushtype(/\textit{\mdseries t}/,/\textit{\mdseries q}/)/]
+  Prints the part that comes before the identifier in a declaration
+  with type \textit{t} and qualifiers \textit{q}. The type is
+  interpreted according to the $[\cdot]$ or $[\![\cdot]\!]$ type
+  mapping, depending on the mode of the /GegenStream/.
+\item[/poptype/]
+  Prints the second half of declaration for a waiting type that has
+  been printed with /pushtype/. As the names imply, a stack discipline
+  is maintained for waiting types.
+\item[/EmitType(/\textit{\mdseries t}/,/\textit{\mdseries{string}}/,/%
+	\textit{\mdseries q}/)/]
+  Equivalent to printing /pushtype(/\textit{t}/,/\textit{q}/)/, then
+  printing \textit{string}, then /poptype/.
+\item[/AbstractDecl(/\textit{\mdseries t}/)/]
+  Short form for /EmitType(/\textit{t}/,"",constvol())/.
+\item[/Unqualified(/\textit{\mdseries t}/,/\textit{\mdseries{string}}/)/]
+  Short form for /EmitType(/\textit{t}/,/\textit{string}/,constvol())/.
+\item[\textit{\mdseries d}]
+  where \textit{d} is a \coreC declaration node. Prints a declarator
+  for the variable. Equivalent to /pushtype/ + name + /poptype/.
+  ``name of variable'' will be the \Pgen name or a name reques
+  according to the mode of the /GegenStream/.
+\item[/alwayscode/]
+  Instructs the /GegenStream/ that the next /pushtype/ should interpret
+  the type according to the rules for expressions (i.e., function
+  parameters and return values) rather than the normal rules for
+  objects.
+\item[/exit/]
+  Ends ``residual-code mode'', printing a quote followed by the
+  postponed expression parts that have been collected since the
+  /enter/.
+\item[/userhole/]
+  This can be used in residual mode to print a ``hole'' character
+  to the current skeleton string and leave a special marker in
+  the list of postponed expressions. When /exit/ meets this special
+  marker it returns to its caller which can then output whatever
+  \Pgen it wants to fill this hole with. Then the rest of the
+  postponed expressions are printed with a \emph{second} /exit/.
+  There can be only one /userhole/ for each /enter/.
+\end{description}
+
+/GegenStream/ has one member function, /EmitLiftingHole/ which takes
+a \coreC type parameter. It prints an appropriately decorated
+/userhole/ and returns to its caller a string containing the name
+of a speclib lifting function that works together with the said
+decorations to lift values of the given type. The return string
+contains the opening parenthesis of the lifting call. The intended
+use is in a sequence like
+\begin{verbatim}
+  gegenstream << enter ;
+  // ...
+  char const *lf = gegenstream.EmitLiftingHole(type) ;
+  // ...
+  gegenstream << exit << ',' << lf << ... << ')' << exit ;
+\end{verbatim}
+
+\subsubsection{Output aspects}
+
+\subsubsection{Implementation notes}
+
+\subsection{gg-cascades: iterating over statically indexed arrays}
+
+The submodule defines the /ForCascade/ class which other submodules
+use for iterating through all elements of statically indexed arrays.
+Constructing a single /ForCascade/ is used for iterating through
+an arbitrary number of array levels, starting at zero---thus the
+common case that an object is not a staticlly indexed array is
+handled transparently.
+
+The constructor for a /ForCascade/ takes three arguments:
+\begin{itemize}
+\item a \coreC type. The loop will iterate through as many levels of
+      statically indexed arrays as it finds at the top of this type.
+\item a reference to a /GegenEnv/
+\item an integer specifying the number of spaces the loop must
+      be indented in the output.
+\end{itemize}
+As the /ForCascade/ is constructed it outputs zero or more nested
+loop statements to the output stream, and also outputs appropritate
+indentation for the body statement of the loop.
+
+Once the /ForCascade/ is created, the client can do these things
+with it:
+\begin{itemize}
+\item inspect its /t2/ member which is the type after all the
+      levels of statically indexed arrays has been stripped of.
+      That is, the type of the actual array elements.
+\item inspect of change its /cv/ member which is a /constvol/
+      structure for holding type qualifiers. This member is
+      initialized with the conjunction of the type qualifiers
+      in the array types which was stripped off to produce /t2/.
+\item output the /ForCascade/ to a /GegenStream/ using an
+      overloaded /<</ operator. This causes a series of subscripts
+      to be written to the /GegenStream/.
+\item call the /addline()/ member function. This causes a comma or
+      semicolon to be output to the output stream, followed by
+      a newline and appropriate indentation for a second action in the
+      loop body.
+\end{itemize}
+
+\subsubsection{Output aspects}
+
+\subsubsection{Implementation notes}
+
+\subsection{gg-struct: struct and union related issues}
+
+This submodule defines one global function and several member
+functions for /GegenEnv/.
+
+The global function is /dotcmix(/\textit{type}/)/. It assumes the
+type is dynamic and returns the string /".cmix"/ if the type is
+a struct or union type and the empty string otherwise. This return
+value can be used as a postfix operator to convert the ``object''
+representation of a dynamic type and the ``expression'' representation.
+
+The /GegenEnv/ member functions are:
+\begin{description}
+\item[/pgen_usertype_fwds()/]
+	This function outputs forward declarations for the static
+	versions of usertypes to \Pgen.
+\item[/pgen_usertype_decls()/]
+	This function outputs actual definitions for the static
+	versiond of usertypes to \Pgen.
+\item[/define_cmixMember()/]
+	This function outputs a definition of an object called
+	/cmixMember/ which is to hold the residual name nodes for
+	members of residual usertypes. After this object has
+	been properly initialized the expression /cmixMember.S.t[i]/
+	evaluates to a /Code/ snippet containing the residual name
+	of the /i/th of the residual members corresponding to the
+	member /t/ of struct or union /S/. (In this example /t/'s
+	type is supposed to be a one-level statically indexed array).
+\item[/define_cmixPutNameX()/]
+	This functions output definitions of functions that are
+	used to intialize \Pgen object whose types map to
+	``shadow structs''. The functions are called /cmixPutName/
+	$X$ where $X$ is a positive integer.
+
+	Every /cmixPutName/$X$ takes two arguments. The first is
+	a reference to the \Pgen object to be initialized; the second
+	is a /Code/ that should contain the residual name that has
+	been created for the object.
+
+	The speclib defines a /cmixPutName0/ which is used for types
+	that map to plain /Code/ in \Pgen:
+\begin{verbatim}
+void cmixPutName0(Code &obj,Code name) {
+  obj = name ;
+}
+\end{verbatim}
+\item[/putnameseq(/\textit{\mdseries t}/)/]
+	Returns the number $X$ in the /cmixPutName$X$/ that is
+	appropriate for the given type.
+\item[/init_struct()/]
+	Outputs whatever usertype-related code should go in the
+	/cmixGennit/ function. This code must initialize the
+	/cmixMember/ structure and may pass on usertype definitions
+	to the speclib.
+\item[/exit_struct()/]
+	Outputs whatever usertype-related code should go in the
+	/cmixGenExit/ function. Apart from interacting with the
+	speclib, this code may write text to the residual program
+	using the /FILE/ pointer /fp/. This text will come before
+	the residual program text that has been collected during
+	specialization.
+\end{description}
+
+\subsubsection{Output aspects}
+
+\subsubsection{Implementation notes}
+
+\subsection{gg-memo: generating memoisation code}
+
+This submodule defined the class /GegenMemo/ which is the type of
+the /memo/ member of /GegenEnv/. /GegenMemo/ contains data that
+are private to the task of generating memoization code.
+
+Its publicly accessible member functions are
+\begin{description}
+\item[/follow_functions()/]
+	Outputs to \Pgen any auxiliary functions that is needed for
+	the memoisation code to work in addition to speclib. Currently
+	this is functions that help the memoisation engine locate
+	pointer members in usertype objects.
+
+	Also this function makes global decisions about memoisation
+	stategies, so it should be called before other member
+	functions in /GegenMemo/.
+\item[/emit_globalmemodata()/]
+	Outputs to \Pgen any data declarations necessary for memoising
+	global variables.
+\item[/emit_globalmemocode()/]
+	Outputs any code that must go into the body of /cmixGenInit/
+	in order to initialize the global variable memoisation.
+\item[/emit_localmemodata(/\textit{\mdseries{fun}}/,/%
+	\textit{ec}/,/\textit{pp}/)/]
+	Outputs those declarations that are necessary for supporting
+	memoisation of local variables and parameters in the
+	generating function corresponding to \coreC function
+	\textit{fun}.
+
+	\textit{\bfseries{ec}} and \textit{\bfseries{pp}} are booleans
+	which specify whether it may be necessary to memoise,
+	repectively, the function entry conditions, and program points
+	within the function.
+
+	/emit_localmemodata/ returns a number which the generator
+	function must pass to the speclib function /cmixPopObjects/
+	before returning.
+\item[/emit_pendinsert(/\textit{\mdseries{fun}}/,/%
+	\textit{\mdseries{bb}}/)/]
+	Outputs a \Pgen expression which inserts the given program
+	point in the pending list and evaluates to a reference to
+	the label resulting from this.
+\item[/emit_funmemo(/\textit{\mdseries{fun}}/)/]
+	Outputs the memoization-related arguments in calls to
+	the speclib function /cmixFunctionSeenB4/ or /cmixPushFun/
+\end{description}
+
+\subsubsection{Output aspects}
+
+\subsubsection{Implementation notes}
+
+\subsection{gg-decl: constructing residual declarations}
+
+\subsubsection{Output aspects}
+
+\subsubsection{Implementation notes}
+
+\subsection{gg-code: constructing generating functions}
+
+\subsubsection{Output aspects}
+
+\subsubsection{Implementation notes}
+
+\subsection{gegen itself: tying all of it together}
+
+\subsubsection{Implementation notes}
+
+\textbf{\Large NB! the rest of this chapter has not yet been updated to match
+the submodule split of gegen, or even the latest changes to the
+speclib interface definition. Trust the material below at your own
+risk. Documentation updates will follow shortly (I hope).}
+
+\subsection{Chapter I: Header inclusions}
+\label{sec:gegen:HeaderInclusions}
+This first chapter includes the header files needed for \Pgen.
+
+First, the files specified in /header:/ specializer directives
+appear. Each of the ``shadow header'' files we use for standard
+headers include an appropriate /header:/ directive. Thus, when the
+user specifies, \eg, ``/#include <math.h>/'' \Pgen will also contain
+``/#include <math.h>/''.
+
+After these user-specified headers, we include the header that defines
+the specialization support library and check that its version is the
+same as the one Gegen was written to work with:
+\begin{verbatim}
+#include <cmix/speclib.h>
+static cmixNameManager cmixNameMan;
+#if cmixSPECLIB_VERSION != 2002
+#error Wrong speclib version
+#endif
+\end{verbatim}
+The default file name for the speclib header is
+\verb|<cmix/speclib.h>|; if the environment variable CMIX_SPECLIB_H is
+set, its value is interpolated instead.
+
+Why this chapter is the right place to define the name manager used
+for constructing residual identifiers seems to have been lost in the
+mists of history. The fact is that it happens here...
+
+\subsection{Chapter II: Forward declarations for usertypes}
+\label{sec:gegen:ForwardDeclarationsForUsertypes}
+The usertypes used in the program can be mutually recursive through
+pointers. This means that before we begin to define their contents we
+need to declare their \emph{names} so that we can define members of
+type ``pointer to struct S'' before the definition of struct S itself.
+
+That is what happens in this phase. The only slight complications
+are
+\begin{itemize}
+\item per the type mapping, an immortal union type maps to a
+      \emph{struct} in \Pgen, not a union.
+\item enum types cannot be forward declared; so we have a choice of
+      defining them here or among the real definitions in the next
+      chapter. We choose to define them early.
+\end{itemize}
+
+\subsection{Chapter III: Definitions for usertypes}
+\label{sec:gegen:DefinitionsForUsertypes}
+Here are the real definitions for the usertypes. This is completely
+straightforward; the members of each usertype is declared according to
+the type mapping.
+
+The immortal usertypes always map to structs here, even if they are
+really unions. Consider a source declaration
+\begin{verbatim}
+union U { int a, int b } u ;
+\end{verbatim}
+This will map to these definitions in \Pgen:
+\begin{verbatim}
+struct U : Code {
+  Code a;
+  Code b;
+};
+/* ... */
+struct U u;
+\end{verbatim}
+At specialzation time, a residual name will be assigned to /u/---say,
+/u42/---and the fields /u.a/ and /u.b/ will contain the residual
+expressions ``/u42.a/'' and ``/u42.b/''.
+
+\subsection{Chapter IV: Names for dynamic structutes}
+\label{sec:gegen:NamesForDynamicStructures}
+Recall (section \ref{sec:gegen:TheTypeMapping}) that the \emph{tags}
+of dynamic structs and unions are fixed at Gegen time. We cannot do
+the same thing for the members, because the number of members in each
+structure type need not be known at Gegen time. Consider
+\begin{verbatim}
+#include <limits.h>
+struct T { int a[UCHAR_MAX], b; };
+\end{verbatim}
+where the binding times of T.a resolve to a statically indexed array
+of dynamic values. The residual program should contain a structure
+like
+\begin{verbatim}
+struct T {
+  int a, a0, a1, a2, a3, a4, a5, a6, ... a254, b;
+}
+\end{verbatim}
+
+Clearly, we can only generate names for these fields when we know
+how many of them we need. The shadow header for /<limits.h>/ declares
+/UCHAR_MAX/ to be a `well-known constant' of type /unsigned/
+/char/. Gegen cannot know its numeric value, but of course it will
+be available when \Pgen{} is compiled. This means that \Pgen{} will
+have to keep track of the member names itself.
+
+This chapter declares variables in \Pgen{} to hold these member names.
+If struct T from the above example was the only immortal struct in the
+program, the chapter would look like
+\begin{verbatim}
+static struct {
+  struct {
+    const char *a[UCHAR_MAX];
+    const char *b;
+  } T;
+} cmixMember;
+\end{verbatim}
+
+The /cmixMember/ struct is there purely to conserve namespace. It
+contains the name data for all the immortal structs. (If there are
+none, the entire chapter is omitted in \Pgen).
+
+The types for the second-level members of /cmixMember/ are formed
+by a process analogous to the \Pgen{} type mapping, replacing /Code/
+with /char/ /const/ /*/.
+
+The initialization function chapter (section
+\ref{sec:gegen:InitializationFunction}) contains code to generate
+names for the residual fields and store them into /cmixMember/.
+
+\subsection{Pseudochapter: For cascades}
+\label{sec:gegen:ForCascades}
+Throughout \Pgen{} the need often arises to do something to a \Pgen{}
+object unless it is an array in which case the something should be
+done to each of the array's elements.
+
+One main case of this is the handling of the /Code/ objects that make
+up the parts of objects with immortal types. Recall (the type mapping,
+section \ref{sec:gegen:TheTypeMapping}) that an immortal type is
+mapped in \Pgen{} to the /Code/ type inside zero or more levels of
+statically indexed arrays.
+
+This pseudochapter defines an idiom for iterating through levels of
+arrays. Say we have an object /x/ whose \Pgen{} type is array[42] of
+array[117] of /short/ and we want to add 5 to each of the /short/s.
+Then we could emit
+\begin{verbatim}
+  { unsigned cmixI0 ;
+    for(cmixI0=0; cmixI0<42; cmixI0++ ) {
+      unsigned cmixI1 ;
+      for(cmixI1=0; cmixI1<117; cmixI1++ ) {
+        x[cmixI0][cmixI1] = x[cmixI0][cmixI1] + 5 ;
+  } } }
+\end{verbatim}
+
+This pattern will be known as a \emph{for cascade}. If the type of /x/
+had just been /short/ the same for cascade would degenerate into
+simply
+\begin{verbatim}
+  x = x + 5;
+\end{verbatim}
+
+In the descriptions that follow, the possible presence of a for
+cascade will usually just be hinted at, and both the above examples
+would be written as \texttt{x = x + 5}.
+
+\subsubsection{Implemenation notes}
+\begin{itemize}
+\item The /for(...)/ lines of a for cascade is emitted by the function
+      /EmitForCascade()/. This function is given a binding-time
+      annotated type $T$ and itself calculates how many levels of
+      arrays $[T]$ contains. A global variable records this number so
+      that subsequent calls to /EmitIndexCascade()/ write out the
+      right number of indexes.
+\item /EmitForCascade()/ takes care of the indentation of the
+      /for(...)/ lines \emph{and} the body line. The indentation
+      will be wrong if the body statement spans multiple lines.
+\item For convenience, /EmitForCascade()/ returns the binding-time
+      annotated type stripped of the array levels. (Any dynamically
+      indexed array levels are still present).
+\item For cascades cannot be nested.
+\item The same index variables /cmixI0/, /cmixI1/, /cmixI2/,$\ldots$
+      are used in each for cascade.
+\end{itemize}
+
+\subsection{Chapter V: Initialization functions for dynamic usertypes}
+\label{sec:gegen:InitializationFunctionsForDynamicUsertypes}
+This chapter (which partially serves as a pseudochapter too) concerns
+itself with name management for the residual program and the
+initialization of those /Code/ objects in \Pgen{} that represent
+objects in the residual program.
+
+The principal role of the /Code/ type is to represent residual
+\emph{expressions}. However each of the objects that will exist in the
+residual program is represented as a /Code/ object in \Pgen{}. When
+viewed as an expressions, these representative /Code/ objects are
+lvalue expressions that refer to the residual objects.
+
+The strategy for the management of residual variable names is that
+when a name is generated it is put into the appropritate
+representative /Code/ object. It finds its way into actual residual
+expressions when the representative /Code/ object is used for
+constructing them.
+
+Finding ``the appropriate representative /Code/s'' and installing the
+freshly generated name
+there can be more or less complicated, according to the type of the
+variable:
+\begin{description}
+\item[/short/$_d$:] This is easy; there is a single /Code/ to worry
+about. We can simply construct an expression referring to the residual
+variable (/Code/ has a built-in conversion from /char*/) and assign
+it into the representative /Code/.
+\item[pointer$_d$ to $T$:] Same as the /short/$_d$ case.
+\item[array$_d$ of $T$:] Same as the /short/$_d$ case.
+\item[array$_s$ of something:] This case never occurs; we generate
+different residual name for each of the array elements and install
+them separately.
+\item[struct$_s$ S:] Here is where the trouble is. \Pgen's version of
+struct S is derived from /Code/ and need to be initialized; but in
+addition to this the members of the structure are also representative
+/Code/ objects and need to be initialized with member selection
+expressions. This task is left over to the special initialization
+functions that gives this chapter its name.
+\end{description}
+
+\subsubsection{Initialization functions}
+For each immortal usertype a custom initialization function is
+generated. Say we have an fully dynamic struct originally defined as
+\begin{verbatim}
+struct S {
+  int a ;
+  struct T *b ;
+  struct T c ;
+}
+\end{verbatim}
+The initialization function that gets generated for this is
+\begin{verbatim}
+static void cmix_putName(S &cmixThis,const Code &cmixIt) {
+  (Code&)cmixThis = cmixIt ;
+  cmixThis.a=cmixStruct(cmixIt,cmixMember.S.a);
+  cmixThis.b=cmixStruct(cmixIt,cmixMember.S.b);
+  cmix_putName(cmixThis.c,cmixStruct(cmixIt,cmixMember.S.c));
+}
+static inline void cmix_putName(S &cmixThis,const char *cmixIt)
+  { cmix_putName(cmixThis,Code(cmixIt)); }
+\end{verbatim}
+
+All initialization functions are overloaded onto the single
+name /cmix_putName/. /cmixStruct/ is an expression constructor
+defined in /speclib.h/; it applies a ``dot'' operator to an
+expression. /cmixMember/ is discussed in section
+\ref{sec:gegen:NamesForDynamicStructures}. Note the different way
+of (pseudo)recursively initializing the /c/ field; this is because it
+is not plainly a /Code/ but a \Pgen{} version of another immortal
+struct.
+
+For members that are statically indexed arrays for cascades are insert.
+
+\subsubsection{Naming a dynamic object}
+This chapter also serves as pseudochapter: its implementation contains
+a function that emits \Pgen{} code to generate a name and install it
+properly. This way all decisions related to the initialization of
+representative /Code/ objects are collected in a single chapter.
+
+Initializing a representative object consists of constructing a name
+based on the variable's original name (if the variable is generated by
+\cmix, a pseudo-original name is invented) and installing it according
+to the object's type. A typical piece of code is:
+\begin{verbatim}
+  cmix_putName(x,cmixNameman.freshLocalName("x"));
+\end{verbatim}
+with the obvious variations if /x/ is not a struct. Well, nearly
+obvious. Instead of
+\begin{verbatim}
+  x = cmixNameman.freshLocalName("x");
+\end{verbatim}
+the current Gegen emits
+\begin{verbatim}
+  x.putVarName(cmixNameman.freshLocalName("x"));
+\end{verbatim}
+where /putVarName/ is a member function of /Code/ that essentially just
+converts its argument to /Code/ and assigns it to /*this/.
+
+If /x/ were a statically indexed array the initialization code would
+be wrapped in a for cascade.
+
+Depending on the name management strategy required for the variable
+type, /cmixNameman.freshLocalName/ can be
+/cmixNameman.freshGlobalName/ or can be totally absent for variables that
+\emph{must} keep their original names in the residual program.
+
+\subsubsection{Implementation notes}
+\begin{itemize}
+\item The generation of /cmix_putName()/ functions should be
+straightforward.
+\item The function /NameDynamicObject()/ emits the initialization code
+described above, as well as any needed for cascade. Its second
+parameter is the function to call to generate a new name based on
+the original name.
+\item The generation of pseudo-original names take place in
+/C_Decl::get_name()/ which is defined in /coreC.cc/.
+\item As a convenience feature, and to share ``for cascades'',
+/NameDynamicObject()/ can also emit code that emits the definition
+of the residual object. When this is wanted the third parameter
+to /NameDynamicObject()/ is the name of the function in speclib that
+should be called to emit the definition. Its calling interface should
+be similar to /cmixGlobal/. When the third parameter is /NULL/ the
+caller takes the responsibility of defining the variable in the
+residual program.
+\end{itemize}
+
+\subsection{Chapter VI: Memoization helper functions}
+This chapter consists of functions that are called by the
+specialization library when it needs to follow the
+pointers to mortal data in a spectime object.
+
+\subsubsection{Speclib-Pgen interface conventions}
+Each object
+has an associated \emph{pointer following function} declared
+like this:
+\begin{verbatim}
+bool cmix_follow117(cmixPointerCallback &,void *,unsigned);
+\end{verbatim}
+The /void*/
+parameter to the pointer following function points to the object
+itself, and the /unsigned/ parameter is the number of elements in
+the object if the object is an array.
+
+The /cmixPointerCallback/ class is defined in /speclib.h/ and
+has an overloaded function call operator with a /void*/ argument,
+returning /bool/. The
+pointer following function is supposed to call that operator once
+for every pointer to mortal data in the object. If the
+/cmixPointerCallback/ ever returns /false/ the pointer following
+function must return /false/ immediately---otherwise it must
+return /true/.
+
+\subsubsection{Anatomy of pointer following functions}
+If there are any struct types in the program containing pointers to
+mortal data, one overloaded helper function
+\begin{verbatim}
+static inline bool cmix_followH
+  (cmixPointerCallback &cmixCallback,T *cmixSrc)
+\end{verbatim}
+is defined for each of these. Its job is to follow pointers in a
+single object of that struct or union type.
+
+For each member /x/ of the struct, the helper function contains:
+\begin{verbatim}
+  if (!cmix_followH(cmixCallback,&cmixSrc->x)) return false;
+\end{verbatim}
+\noindent if /x/ is itself a struct containing pointers to mortal
+data, or
+\begin{verbatim}
+  if (!cmix_followH(cmixCallback,(T*)&cmixSrc->x)) return false;
+\end{verbatim}
+\noindent if /x/ is a union containing pointers to motal data. The
+BTA should only let this happen if all members of the union are
+structs, and if all pointers to mortal data are duplicated in every
+member of the struct. /T/ is then the type of the first member of
+the union, or
+\begin{verbatim}
+  if (!cmixCallback(cmixSrc->x)) return false;
+\end{verbatim}
+\noindent if /x/ is a pointer to mortal data, or \\
+\emph{nothing} if none of these cases hold. Each of these
+constructs is called a \emph{memoizer statement}.
+
+After the /cmix_followH/ functions the primary pointer following
+functions follow. They all look like
+\begin{verbatim}
+static bool cmix_follow117
+    (cmixPointerCallback &cmixCallback, void *cmixVoid, unsigned cmixI) {
+  T* const cmixSrc = (T*)cmixVoid ;
+  while ( cmixI-- )
+    .. memoizer statement for cmixSrc[cmixI] .. ;
+  return true;
+}
+\end{verbatim}
+
+Several objects can share the same pointer following function if they
+have the same (binding-time annotated) type. The connection between
+pointer following functions and data objects is made in later
+chapters.
+
+The specialization library predeclares the function /cmix_follow1()/
+which is used for objects that do not contain any pointers to mortal
+data.
+
+\subsubsection{Implementation notes}
+\begin{itemize}
+\item The function /AnyPointersToFollow()/ investigates if a given
+	declaration contains pointers that should be followed. If
+	it does, it also sets up a couple of global variables that
+	makes the next call to /EmitMemoizer()/ emit a memoizer
+	statement for the type specified by the declaration.
+\item /AnyPointersToFollow()/ relies on the /SimpleMemoization/
+	annotation on struct declarations. This annotation is
+	set up while generating the /cmix_followH/ functions;
+	a process which itself uses the /AnyPointersToFollow()/
+	function. It is essential for correct results that the
+	struct declarations are processed in ``topological order''
+	(cv. section \ref{sec:StructureDefinitionSorting}).
+\item /AlocMemodata()/ is called for each object in the program
+	and does several things:
+	\begin{itemize}
+	\item decides if the object is mortal or immortal
+	\item assigns a sequential ID number to each mortal object.
+		Immortal objects get the pseudo-ID 0.
+	\item for each mortal object, decides if a previously
+		generated pointer following function can be used for
+		it. Generates one if not.
+	\item annotates the object with the number of the pointer
+		following function that fits it.
+	\end{itemize}
+	The second argument to /AlocMemodata/ is a list that the
+	function builds of the objects that have had specialized
+	pointer following functions generated. It is used to share
+	pointer following functions between objects.
+\item /AlocMemodata(NULL,NULL,NULL)/ initializes the object
+	sequence counter.
+\item /AlocMemodata(NULL,NULL,streamp)/ emits a definition of
+	/cmixMWCount/ which is an array of /unsigned/ with as many
+	elements as there are object IDs. The specialization
+	library uses this for some arcane purpose.
+\end{itemize}
+
+
+\subsection{Chapter VII: Global variables}
+This chapter contains declaration for the program's global variables.
+
+Most variables are simply declared as
+\begin{verbatim}
+static T x;
+\end{verbatim}
+according to the type mapping,
+but external variables that have been annotated /dangerous spectime:/ and
+variables with /visible spectime:/ annotations need to be able to link
+together with external C code that is linked into \Pgen. They are
+defined as
+\begin{verbatim}
+extern "C" T x;    // x is dangerous spectime
+\end{verbatim}
+or
+are declared as
+\begin{verbatim}
+extern "C" {
+  T x;             // x is visible spectime
+}
+\end{verbatim}
+
+Mortal variables\footnote{with the exception of \texttt{dangerous
+spectime} variables} must be registered with the specialization
+library's memoization engine. Immediately after each definition
+a /cmixDataObject/ is constructed to take care of that. This looks
+like
+\begin{verbatim}
+static cmixDataObject cmixDO1235(1234,&x,sizeof x,cmix_follow29, 1, false);
+\end{verbatim}
+/1233/ is the object's ID number in the specialization library (which is
+one less than the ID number used internally in gegen; that number is
+0 for objects that should not be memoized, but the specialization
+library wants the numbers to start at 0).
+
+The number /1/ is the number of array elements that should be given to
+the pointer following function. It is always 1 even if the object is
+an array, this number is different only for heap allocations where the
+number of array elements is determined at spectime.
+
+The last argument /false/ to the constructor signals that the control
+object should not register itself as a local variable with the
+specialization library.
+
+
+After all global variables from the subject have been declared, a
+constant array /cmix_globals/ containing pointers to all the
+/cmixDataObject/s is defined. This array is used for referring to
+the set og global variables in calls to the specialization library.
+
+\subsubsection{Implementation notes}
+\begin{itemize}
+\item The /DeclareDO()/ function that emits the declaration of
+	/cmixDataObjects/ is also used by the generator functions
+	to declare local /cmixDataObject/s.
+\end{itemize}
+
+\subsection{Pseudochapter: Generator function conventions}
+\label{sec:gegen:GeneratorFunctionConventions}
+This pseudochapter specifies the calling conventions among generating
+functions.
+
+A generating function corresponds to a function definition in the
+subject program. It is called when a call to that function needs to
+be specialized. The generating function is given the mortal arguments
+to the call. It can then either decide to re-use a previously
+generated specialized version, in which case it reproduces the
+memoized static side effect, or to specialize the function anew.
+
+The generating function's return value is a /Code/ which represents
+the \emph{name} of the residual function that shold be used when
+specializing the call. It is the caller's job to then construct
+a function call expression.
+
+The parameters to a generating function are those of the original
+function's parameters whose types are mortal. If the original
+function's return type is mortal and different from /void/ an
+additional parameter is appended \emph{in front} of the others.
+The additional parameter has type ``pointer to the return type'', and
+locates the place where the caller wants the return value deposited.
+
+Generating functions are always /static/ in the \Pgen{} source.
+
+\subsubsection{Implementation notes:}
+\begin{itemize}
+\item The pseudochapter's primary contribution is an /EmitType/
+	deriviate called /GeneratorProto/ whose job is to generate
+	prototypes for generating functions. These are used in
+	chapters VIII and IX and need to be identical in those
+	two chapters. /GeneratorProto/ does not really use its
+	/EmitType/ ancestry for anything serious but might
+	change to do it when the calling convention changes to
+	accomodate inlining at some time in the future.
+\item Located in this pseudochapter is also the function
+	/EmitThingsForCall/ which produces the \Pgen equivalent
+	of a Core C call statement. The intention of having the
+	function defined here was that is must be changed when
+	the generator function interface changes, so is would
+	be smart to have the two pieces of code close to each
+	other. Yeah, right.
+\end{itemize}
+
+\subsection{Chapter VIII: Function prototypes}
+This chapter contains prototypes for every external function declared
+in the subject program. We may not need to call all of them at
+spectime, but it does not hurt to mention all of them. And we have
+no analysis to show us which ones we do need.
+
+External functions whose name is mentioned in a /well-known:/
+directive are explicitly excluded from the prototype list. This
+feature is used by shadow header files where we want the appropriate
+real header to be included in Chapter I instead of having our own
+prototypes written out. If the real header file defines the function
+as a macro it could be disasterous to try to declare it explicitly.
+
+Also, since the generating functions may be mutually recursive, we
+also declare prototypes for all of them.
+
+\subsection{Chapter XI: Generator functions}
+Here at last we reach the goal of all the previous preparations:
+the functions that actually specialize code.
+
+There is one such function for each function in the subject program;
+their calling conventions have been discussed in an earlier section
+(\ref{sec:gegen:GeneratorFunctionConventions}).
+
+\subsubsection{Sharing strategy}
+Before going into the details of the generating function we shall
+discuss the strategy for sharing residual functions between multiple
+residual calls. There are three possible strategies:
+\begin{itemize}
+\item \textbf{Non-shared:} the function is only used once at the
+	call that prompted its initial generation. Even if a
+	perfect match for the arguments and static state later
+	arises, the function is not reused.
+\item \textbf{Semi-shared:} The function
+	can be shared, but only for calls that are specialized
+	after it has been fully specialized---\ie, recursive
+	and indirecly recursive calls cannot be shared.
+\item \textbf{Fully shared:} Even recursive calls can be shared.
+	For this to be possible, the function must have no
+	static side effects---when a call is shared any side
+	effects must be reproduced, and naturally that can't
+	happen until we actually know that all side effects have
+	been \emph{performed} in the first place.
+\end{itemize}
+\cmix{} selects sharing strategy on a per-function basis.
+
+The only functions that are currently handled as non-shared are those
+that have a static return value different from /void/. Such a return
+value is equivalent to a static side effect, so they can never be
+fully shared. However, all it would take to make them semi-shared
+would be working code to memoize their return value.
+
+We now turn to functions without static return values.
+Naturally it is unsafe to specify ``fully shared'' for
+a function that actually contains static nonlocal side
+effects. On the other hand, there is a cost to using the
+semi-shared stategy: an attepmt to create a recursive
+residual program will loop.
+
+If would appear that we need an analysis that tells which functions
+may cause static side effects. It turns out, however, that there is
+a clever way to use existing BTA information to select a sharing
+strategy:
+
+Assume the specialization process actually tries
+to create a recursive residual program. The execution path
+from this call to the recursive call either has a dynamic
+branch in it, or it has not. If there is no dynamic branch,
+then the subject program would also loop. It is commonly
+accepted for partial evaluators to loop when faced with
+an infinte loop under purely static control.
+
+Hence we can assume that there \emph{is} a dynamic branch
+somewhere in the recursion. But that means that the entire
+recursion will be classified as ``under dynamic control'', which
+again means that this function will not have been \emph{allowed}
+by the BTA to have any static nonlocal side-effects.
+
+The net result is that when the function is under dynamic
+control it is safe to use the fully-shared strategy, and
+when the function is not under dynamic control it is safe
+to use a semi-shared strategy.
+
+A function that was not under dynamic control, yet could
+be shown to be free from static nonlocal side-effects, can
+safely use either strategy. However, the dynamic control
+information is readily available the only cost of letting
+the function be fully shared is a slight waste of time while
+detecting that there were no static side effects that need
+to be reproduced.
+
+Therefore, we choose to rely on the dynamic control information
+for selecting sharing strategy.
+
+\subsubsection{The generation function preamble}
+Now we describes what happen in the generating function until
+we reach the part that is directly derived from the subject
+function's flow graph.
+
+\begin{description}
+\item[Local variables] \Pgen{} versions of all the function's
+	local variables are declared, according to the type
+	mapping. /cmixDataObject/s are constructed for the
+	mortal ones. The /cmixDataObject/ constructor automatically
+	registers itself with the specialization library.
+\item[Parameters] The mortal parameters have already been declared
+	in the function headings, but still /cmixDataObject/s
+	need to be constructed for them. \Pgen{} versions of
+	the immortal parameters are declared, again according
+	to the type mapping.
+\item[Locals array] An array called /cmix_locals/ that contains
+	pointers to the /cmixDataObject/s just constructed for
+	mortal local variables and parameters, is constructed.
+\item[State object] A /cmix_state/ referring to the local and
+	global objects is constructed. This will be used when
+	memoizing program points within the function.
+\item[Second state object] Another state object /cmix_funmemo/
+	that includes the global variables and arguments, but
+	not the local variables, is declared. If there are
+	no mortal local variables it is an alias for /cmix_state/;
+	else it is constructed by skipping past the first elements
+	of /cmix_locals/.
+
+	This state object is used when memoizing
+	the function call itself---thus function calls will not
+	be prevented from being shared just because they start
+	with different random garbage in their local variables.
+\item[Function memoization] The speclib function /cmixFunctionSeenB4/
+	is called to determine whether a previously specialized
+	function can be used (the sharing strategy is not used
+	here: non-sharable functions are simply not found because
+	they are never entered into the memoization pool).
+
+	If a suitable function is found, the /cmixDataObject/s are
+	de-registered (/cmixPopObjects/) and the generating
+	function returns.
+\item[Name managers] A name manager /cmixLabelNM/ is created
+	to take care of goto labels in the residual functions.
+
+	A name manager /cmixLocalNames/ is created to take care
+	of the names of local variables and parameters in the
+	residual function. This name manager works together
+	with the master name manager to ensure that local names
+	avoid names that have been used globally and, conversely,
+	that later global namings avoid names that have been used
+	at the local level.
+\item[Residual function headning] The /cmixPushFun()/ is called
+	to create a new residual functions and install that as
+	the target of subsequent residual code emissions. The
+	specialization library also gets told the sharing mode
+	at this point.
+
+	The specialization library only supports function return
+	types that can be written \emph{before} the function name.
+	That is, the residual return type cannot be pointer to array
+	or pointer to function. \textbf{We do not check this!}---\Pgen{}
+	simply contains a literal string with an abstract declaration
+	as the ``type'', and un-compilable residual programs result
+	when something goes wrong here.
+\item[Residual parameters] The immortal parameters of the function
+	map to parameters of the residual function. They get a name
+	from the local name manager and are entered in the residual
+	function's parameter list by /cmixParam()/. See 
+	\ref{sec:gegen:InitializationFunctionsForDynamicUsertypes}
+	for more on naming dynamic objects.
+\item[Residual local variables] The immortal residual variables
+	are initialized in the same way as the parameters.
+\item[The pending loop] We create a fresh pending list with
+	/cmixPushPend()/ and insert the function's first
+	basic block into it. Since it is also the first block
+	to be pulled out again, its code will be at the start
+	of the residual function, too.
+
+	The pending loop uses a GCC extension that allows goto
+	labels in \Pgen{} to be stored in /void*/ pointers and
+	jumped to later. A more portable solution would be
+	to identify basic blocks numerically and have a /switch/
+	statement, but that could be slow on C compilers that
+	don't create jump tables for switches.
+
+	When there are no more pending points for the function,
+	we pop off the current function, the local memoization
+	object, and the pending list, and return the name of
+	the newly finished residual function.
+\end{description}
+
+\subsubsection{The actual generating code}
+Now comes the code where residual production code is generated and
+spectime actions done, one basic block at a time.
+
+Each basic block consists of a series of transformed statements
+and a transformed jump.
+
+\begin{description}
+\item[Assignment statements] are transformed straightforwardly
+	according to the expression mapping. A residual assignment
+	is generated iff the assigned value has a immortal type.
+\item[Call statements] come in several flavors:
+	\begin{description}
+	\item[external pure calls] have been resolved by the
+		btdebug phase to either external spectime calls
+		or external residual calls.
+	\item[external spectime calls] are made at spectime.
+		The return value can be ignored or assigned to
+		either an immortal or a mortal variable.
+	\item[external residual calls] are simply constructed
+		and emitted to the residual code. Again, the
+		return value can be ignored or assigned
+		to an immortal variable.
+	\item[specializable calls] are more complex. They always
+		have their own compound statement in \Pgen, so there
+		can be local variables in their specialization.
+
+		If the called function returns a mortal
+		value it wants to write it to an actual mortal
+		variable. If we have not a mortal variable at
+		hand (because the call statement specifies
+		it should be ignored, or lifted and assigned to an immortal
+		variable), we need a temporary location to copy
+		it into. If necessary, this location is declared
+		with the name /cmixSR/.
+
+		After possibly declaring a /cmixSR/ the generating
+		function is called with the mortal of the arguments,
+		and its return value (a /Code/ representing the
+		function the residual program should call) is saved
+		in a temporary names /cmixF/.
+
+		Then a residual function call is constructed, and
+		if the return value is genuinely immortal and not
+		ignored the function call makes up the right-hand side
+		of a residual assignment---else it is just a residual
+		expression statement.
+
+		Finally, if the return value should be lifted, a
+		residual assignment is generated containing the
+		lifted value of /cmixSR/.
+	\end{description}
+\item[Call through function pointers] are not handled yet and result
+	in an error message if they ever make it to the Gegen phase.
+\item[Alloc statements] depend on the binding time of the allocated pointer:
+	\begin{description}
+	\item[dynamic pointer] always points to immortal data. The
+		call to {\catcode`\/=11 malloc/calloc} is emitted
+		to the residual function.
+	\item[static pointer to immortal data] This allocation
+		makes a heap allocation in \Pgen{} but a global
+		variable in the residual program. The \Pgen{}
+		counterpart of the object is heap allocated,
+		but is then named with a name from the global
+		name manager and registered as a global residual
+		variable.
+
+		\textbf{Possible error:}In effect the allocation
+		becomes a statically indexed dynamic array. Do
+		all the separate dynamic variables get initialized
+		correctly?
+	\item[static pointer to mortal data] The allocation is
+		performed by a special specialization library helper
+		routine that allocates the memory and constructs and
+		registers a /cmixDataObject/ for memoizing its
+		contents.
+	\end{description}
+\item[Free statements] are ignored unless freeing a dynamic pointer.
+	In that case a call to /free()/ is constructed and emitted
+	to the residual program.
+\item[Conditional jumps] If the condition is static the jump is
+	performed at spectime, bypassing the pending list and jumping
+	directly to the next basic block.
+
+	If the condition is dynamic a residual /if/ is generated by
+	a speclib function that also searches for the two targets in
+	the pending list and enters them if they are not found.
+	Then control resumes to the pending loop.
+\item[Unconditional jumps] normally bypasses the pending list: an
+	unconditional jump results in \Pgen.
+
+	However the added potential for code sharing that can result
+	from memoizing unconditional jumps is sometimes needed so much
+	that it makes up for the very significant spectime slowdown
+	that it causes. \cmix{} contains a switch that makes it
+	generate \Pgen{}s that memoizes unconditional jumps when they
+	are under dynamic control---it is not safe to memoize jumps
+	that are not under dynamic control: that might violate the
+	guarantees of execution sequence we make about /spectime:/
+	annotated external calls.
+\item[Return statements] generate a residual return statement. If
+	the function's return value is static an assignment to
+	the caller's static return value is generated before returning
+	control to the pending loop.
+\end{description}
+
+\subsubsection{Implementation notes}
+\begin{itemize}
+\item The code for the translation of call statements is located in
+	the pseudochapter ``Generator function conventions''.
+\end{itemize}
+
+\subsection{Chapter X: Initialization function}
+This chapter contains the functions /cmixGenInit()/ which initializes
+various spectime data before specialization can begin, and
+/cmixGenExit()/ which writes the final residual program to a file
+\subsubsection{cmixGenInit}
+\begin{description}
+\item[Taboo words] The global name manager is initialized with a
+	list of words that must not be used for autogenerated residual
+	identifiers. The list includes:
+	\begin{itemize}
+	\item words from explicit /taboo:/ directives
+	\item tags of enums and dynamic structs and unions
+	\item names of external and visible global residual variables
+	\item names of all external functions
+	\item C keywords
+	\end{itemize}
+
+	\textbf{Possible Error!} Shouldn't the names of enum constants
+	appear in the taboo list too?
+
+\item[Speclib version check] The initialization function calls the
+	function /cmixSpeclibVersion/. This name is defined as a
+	macro in /speclib.h/, and its expansion changes each time
+	the \Pgen-speclib interface is modified. It has already been
+	checked that the /speclib.h/ that is included agrees with
+	the generated \Pgen; this call checks that the compiled
+	specialization library that is linked in agrees with the
+	header file. A version mismatch causes a linker error if
+	one tries to link with an out-of-date speclib.
+
+	The /cmixSpeclibVersion()/ function itself does nothing.
+\item[Member names for dynamic structures] The /cmixMember/ structure
+	described in section \ref{sec:gegen:NamesForDynamicStructures}
+	is filled with freshly generated member names.
+
+	A name manager is created for each usertype. \textbf{This is
+	probably wrong}: member names should avoid at least some
+	taboo words which may be defined as macros in header files.
+
+\item[Global varibales] Initialization for global variables. This is
+	different according to whether the variable is mortal or
+	immortal:
+	\begin{description}
+	\item[Mortal variables] have their controlling
+		/cmixDataObject/ (which was declared along with the
+		variable itself).
+	\item[Immortal variables] first have names assigned as
+		descibed in section
+		\ref{sec:gegen:InitializationFunctionsForDynamicUsertypes}.
+		The names are either generated by the global name
+		manager or (for external and visible variables) simply
+		identical to the original names.
+
+		After that, and unless the variable is /well-known:/
+		annotated, a declaration is emitted to the residual
+		program by calling the /cmixGlobal/ function.
+		This is slightly messy because the specialization
+		library does not have any independen concept of
+		storage modes, so the residual variable storage modes
+		must be included in the string that speclib thinks
+		is the type.
+
+		Also, the variable may have an intializer which is
+		given as an optional third argument to /cmixGloba()/.
+	\end{description}
+\item[Start-up code] At the end of /cmixGenInit/ is a possibly empty
+	series of fully spectime Core C statements that initialize
+	global spectime variables. Initializers for global variables
+	can result either in initializers in the variable's definition
+	or in a statement here. The Core C generator tries to minimize
+	the use of statements in this block to initialize global
+	variables, because immortal variables cannot be initialized
+	here. (If a statement with immortal parts occurs here, Gegen
+	exits with an error message).
+\end{description}
+
+\subsection{cmixGenExit}
+The /cmixGenExit()/ function is called after specialization is
+complete to write out the residual program is complete.
+/cmixGenExit()/ itself contains a \emph{preabmle} which it writes
+to the specified files. Then it calls the specialization library
+to write out the residual code that has been collected.
+
+The preamble for the residual program contains:
+\begin{description}
+\item[Business card] A statement that the residual program was
+	automatically generated by \cmix.
+\item[Header inclusions] All headers which have been mentioned
+	by /header:/ directives.
+\item[Usertypes] Definitions of immortal structs and unions with
+	the field names computed by /cmixGenInit()/. Definitions
+	for every enum type.
+\item[External functions] Prototypes for all external functions
+	in the program, except those mentioned i /well-known:/
+	directives.
+\end{description}
+
+
+
+\subsection{Implementation level (1998-03-02)}
+\label{sec:GEGENImplementationLevel}
+
+This chapter has become somewhat out of date after the speclib
+interface has been reworked. The same general principles still
+apply, though.
+
+\DeleteShortVerb{/}
+
+\end{docpart}
+
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: /cmixII/
+%%% End: 
+
+

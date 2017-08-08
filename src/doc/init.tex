@@ -1,0 +1,139 @@
+% File: init.tex
+% Time-stamp: 
+% $Id: init.tex,v 1.1 1999/03/02 06:09:10 makholm Exp $
+
+\providecommand{\docpart}{\input{separatehead}}
+\begin{docpart}
+
+\section{Initializer conversion}
+\label{sec:Initializer conversion}
+
+In \ansiC, an initializer in a variable declaration must be regarded
+as executable code. \textit{E.g.}, the following program must output
+\texttt{abab} because the initializer is executed each time the
+loop body is entered:
+\begin{verbatim}
+int main(void) {
+   int i ;
+   for(i=0; i<2; i++) {
+     char j = 'a' ;
+     printf("%c.",j);
+     j = 'b' ;
+     printf("%c.",j);
+   }
+}
+\end{verbatim}
+
+Not so in \coreC. First, in \coreC variables are can only be declared
+at the beginning of a function. If, in the above program, we were to
+just move the declaration and the associated initializer of \texttt{j}
+to the beginning of the function, the meaning of the program would
+silently change and it would output \texttt{abbb} instead.
+
+Moreover, it is not even safe for variables that appear at the
+beginning of a function to keep their initializers. In the above
+program, the loop body could just as well be a separate function that
+happened to be inlined during specialization---which would again
+move the declaration of j to the top of the \emph{residual} function.
+
+This section describes how \cmix avoids that sort of problems.
+
+\subsection{Simple initialization}
+When the initializer can be expressed as a single expression---\eg
+when the initialized variable has arithmetic or pointer type---the
+matter is handled in the c2core translation phase. It simply directly
+converts the initializer to a regular assignment statement at the
+right point in the flow graph and removes the initializer from the
+\coreC declaration of the variable.
+
+\subsection{Complex initialiation}
+However, not all types that can be initialized in C do have a
+syntax for constant \emph{expressions}\footnote{What a silly, filthy
+unorthogonal language!}. For these types it is not simple to generate
+an assignment statement.
+
+One option would be to convert the initializer into multiple
+assignment statements. That approach, however, does not apply
+if the elements of the initializer cannot be resolved at analysis
+time (which may happen if an array index cannot be interpreted by
+the analyser). Thus we reject it.
+
+The remaining option is to move the original initializer to a new
+auxiliary variable of the same type as the original one, and copy
+the values between the two initializers at the point where
+initialization was originally supposed to take place.
+
+This happens to be safe because \ansiC requires that the
+expressions in a complex initializer does not depend on the
+values of any object, so they will evaluate to the same value
+at the top of the function as they would at the point of
+initialization.
+
+On the other hand it would not be safe to let the auxiliary
+variable be global, because the expressions in the initializer may
+need to refer to the \emph{addresses} of other local variables, as in
+\begin{verbatim}
+void foo(void) {
+  int i,j ;
+  struct { int *a, int j } bar = { &i, sizeof j };
+  /* ... */
+}
+\end{verbatim}
+
+\subsubsection{Selecting candidates for initializer movement}
+The generation of auxiliary variables and assignments was felt
+to be possibly impeding on the efficiency of the generated program,
+and certainly confusing to its human readers. Therefore we want
+to only do it when it is absolutely necessary.
+
+We believe that in practise many variables with complex initializers
+are not actually changed after initialization. They could have been
+\texttt{const} but programmers do not always declare them thus.
+These variables do not need initializer motion: because of the
+requirement that the initializing expressions are constant the
+value of the initializer cannot be different each time it is
+``executed''.
+
+This suggests that the initializer motion should be performed
+after the pointer analysis, so that we can decide to keep
+the initializers for variables that are never the target of
+any side effects in the program.
+
+\subsubsection{Special consideration for array initializers}
+A special complication arises in the not uncommon case that the
+initialized variable is an array. Because C has no array assignment\footnote
+{Which in turn is because C has no array \emph{expressions} that
+could go on the right-hand side of such an assignment} one cannot
+simply generate an assignment statement between the original and
+the auxiliary array.
+
+The remedy is to wrap the array in a struct type, since C does have
+struct assignment. That is, before initializer movement on
+\begin{verbatim}
+   T blarf[42] = { blah blah };
+\end{verbatim}
+we convert it to
+\begin{verbatim}
+struct blarf { T a[42] } ;
+/*...*/
+   struct blarf blarf = { { blah blah } };
+\end{verbatim}
+(notice the extra set of braces in the initializer).
+
+The point where this gets complex is that we then need to replace
+any $\cons{Var}(\texttt{blarf})$ expression with
+$\cons{Member}(\cons{Var}(\texttt{blarf}),1)$. Fortunately the scope
+rules guarantee that such expressions are only found within the same
+function as \texttt{foo} itself.
+
+\subsection{Implementation level, 1999-03-02}
+
+The initializer conversions has been implemented as described.
+The code for the complex initializer movement is in \texttt{init.cc}
+
+\end{docpart}
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: "cmixII"
+%%% End: 
+

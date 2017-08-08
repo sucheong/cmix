@@ -1,0 +1,64 @@
+## Content:  C-Mix system: Dependencies for the annotation browser
+
+## This file is separate from the makefile so that the automatic
+## updates from `make depend` does not interfere with the generation
+## of makefiles from `configure`
+
+# DO NOT DELETE THIS LINE -- mkdep uses it.
+# DO NOT PUT ANYTHING AFTER THIS LINE, IT WILL GO AWAY.
+
+
+annocut.o: \
+ annocut.c \
+ annofront.h
+annohash.o: \
+ annofront.h \
+ annohash.c
+annolink.o: \
+ annofront.h \
+ annolink.c \
+ latch.h
+annomisc.o: \
+ annofront.h \
+ annomisc.c
+annopp.o: \
+ annofront.h \
+ annopp.c \
+ latch.h
+annotext.o: \
+ annofront.h \
+ annotext.c \
+ latch.h
+frames.o: \
+ annofront.h \
+ frames.c \
+ http.h
+http.o: \
+ http.c \
+ http.h
+latch.o: \
+ latch.c \
+ latch.h
+lex-yy.o: \
+ annofront.h \
+ lex-yy.c \
+ y-tab.h
+main.o: \
+ ../cmixconf.h \
+ annofront.h \
+ main.c
+server.o: \
+ ../cmixconf.h \
+ server.c \
+ server.h
+webfront.o: \
+ ../cmixconf.h \
+ http.h \
+ server.h \
+ webfront.c
+y-tab.o: \
+ ../cmixconf.h \
+ annofront.h \
+ y-tab.c
+
+# IF YOU PUT ANYTHING HERE IT WILL GO AWAY
